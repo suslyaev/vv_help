@@ -86,6 +86,7 @@
                             <th>ID</th>
                             <th>Заголовок</th>
                             <th>Клиент</th>
+                            <th>Организация</th>
                             <th>Категория</th>
                             <th>Статус</th>
                             <th>Приоритет</th>
@@ -105,7 +106,8 @@
                                     {{ ticket.title|truncatechars:40 }}
                                 </a>
                             </td>
-                            <td>{{ ticket.client.name|truncatechars:20 }}</td>
+                            <td>{{ ticket.client.name }}</td>
+                            <td>{{ ticket.client.organization.name|default:"—" }}</td>
                             <td>{{ ticket.category.name|truncatechars:20 }}</td>
                             <td>
                                 <span class="status-badge" style="background-color: {{ ticket.status.color }};">

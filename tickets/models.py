@@ -34,7 +34,8 @@ class Category(models.Model):
 
 class Client(models.Model):
     """Клиенты (поставщики)"""
-    name = models.CharField('Название', max_length=200, default='Неизвестный клиент')
+    name = models.CharField('Имя', max_length=200, default='Неизвестный клиент')
+    organization = models.ForeignKey('Organization', on_delete=models.PROTECT, null=True, blank=True, verbose_name='Организация')
     phone = models.CharField('Телефон', max_length=20, blank=True)
     external_id = models.CharField('Внешний ID', max_length=100, blank=True, help_text='ID в внешней системе (например, Telegram)')
     email = models.EmailField('Email', blank=True)
@@ -49,6 +50,21 @@ class Client(models.Model):
         verbose_name_plural = 'Клиенты'
         ordering = ['name']
     
+    def __str__(self):
+        return self.name
+
+
+class Organization(models.Model):
+    """Организация (юр.лицо)"""
+    name = models.CharField('Организация', max_length=255, unique=True)
+    created_at = models.DateTimeField('Создано', auto_now_add=True)
+    updated_at = models.DateTimeField('Обновлено', auto_now=True)
+
+    class Meta:
+        verbose_name = 'Организация'
+        verbose_name_plural = 'Организации'
+        ordering = ['name']
+
     def __str__(self):
         return self.name
 
@@ -153,7 +169,6 @@ class TicketAudit(models.Model):
         ('assigned', 'Назначен исполнитель'),
         ('taken', 'Взято в работу'),
         ('resolved', 'Решено'),
-        ('closed', 'Закрыто'),
         ('updated', 'Обновлено'),
         ('comment_added', 'Добавлен комментарий'),
     ]

@@ -25,6 +25,7 @@ urlpatterns = [
     path('clients/', views.client_list, name='client_list'),
     path('clients/create/', views.client_create, name='client_create'),
     path('clients/<int:client_id>/', views.client_detail, name='client_detail'),
+    path('clients/<int:client_id>/edit/', views.client_edit, name='client_edit'),
     
     # Аналитика
     path('analytics/', views.analytics, name='analytics'),
@@ -37,4 +38,6 @@ urlpatterns = [
     path('api/categories/', views.autocomplete_categories, name='autocomplete_categories'),
     path('api/clients/', views.autocomplete_clients, name='autocomplete_clients'),
     path('api/users/', views.autocomplete_users, name='autocomplete_users'),
+    path('api/organizations/', views.autocomplete_organizations, name='autocomplete_organizations'),
+    path('api/organizations/create/', views.create_organization, name='create_organization'),
 ]

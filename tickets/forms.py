@@ -1,5 +1,5 @@
 from django import forms
-from .models import Ticket, TicketComment, Client, Category, TicketStatus, TicketAttachment
+from .models import Ticket, TicketComment, Client, Category, TicketStatus, TicketAttachment, Organization
 
 
 class MultipleFileInput(forms.ClearableFileInput):
@@ -91,6 +91,16 @@ class TicketCommentForm(forms.ModelForm):
 
 
 class ClientForm(forms.ModelForm):
+    # Отдельное текстовое поле для автокомплита организации
+    organization = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control autocomplete-field',
+            'placeholder': 'Начните вводить...',
+            'data-autocomplete-url': '/tickets/api/organizations/',
+            'data-autocomplete-min-length': '0',
+        })
+    )
     class Meta:
         model = Client
         fields = [

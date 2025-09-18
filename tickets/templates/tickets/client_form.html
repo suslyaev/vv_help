@@ -24,11 +24,14 @@
                     <div class="row">
                         <div class="col-md-8">
                             <div class="mb-3">
-                                <label for="{{ form.name.id_for_label }}" class="form-label">Название *</label>
-                                {{ form.name|add_class:"form-control" }}
-                                {% if form.name.errors %}
-                                    <div class="text-danger">{{ form.name.errors }}</div>
-                                {% endif %}
+                                <label class="form-label">Организация</label>
+                                {{ form.organization }}
+                                <input type="hidden" name="organization_id" id="organization_id" {% if client and client.organization %}value="{{ client.organization.id }}"{% endif %}>
+                                <div class="mt-2">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="showOrgModal()">
+                                        <i class="bi bi-plus"></i> Добавить организацию
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <div class="col-md-4">
@@ -41,6 +44,19 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="mb-3">
+                                <label for="{{ form.name.id_for_label }}" class="form-label">Имя клиента *</label>
+                                {{ form.name|add_class:"form-control" }}
+                                {% if form.name.errors %}
+                                    <div class="text-danger">{{ form.name.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-4"></div>
                     </div>
 
                     <div class="row">
@@ -96,7 +112,8 @@
 
                     <div class="d-flex justify-content-between">
                         <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-check-circle"></i> Создать клиента
+                            <i class="bi bi-check-circle"></i>
+                            {% if client %}Сохранить{% else %}Создать клиента{% endif %}
                         </button>
                         
                         <a href="{% url 'tickets:client_list' %}" class="btn btn-secondary">
@@ -143,4 +160,56 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function getCookie(name){
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== ''){
+        const cookies = document.cookie.split(';');
+        for (let i=0;i<cookies.length;i++){
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')){
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+// Привязать hidden organization_id при выборе значения (унификация с нашим autocomplete в base.html)
+document.addEventListener('DOMContentLoaded', function(){
+    const orgInput = document.querySelector('input[name="organization"]');
+    if (!orgInput) return;
+    // Если уже есть скрытый id (при редактировании), не трогаем
+    // Модалка создания организации
+});
+
+function showOrgModal(){
+    const name = prompt('Введите название организации');
+    if (!name) return;
+    const form = document.querySelector('form');
+    fetch('/tickets/api/organizations/create/', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: 'name=' + encodeURIComponent(name)
+    }).then(r=>r.json()).then(data=>{
+        if (data && data.id){
+            document.querySelector('input[name="organization"]').value = data.name;
+            let h = document.getElementById('organization_id');
+            if (!h){ h = document.createElement('input'); h.type='hidden'; h.name='organization_id'; h.id='organization_id'; form.appendChild(h); }
+            h.value = data.id;
+        } else if (data && data.error){
+            alert(data.error);
+        } else {
+            alert('Не удалось создать организацию');
+        }
+    }).catch(()=>alert('Ошибка сети'));
+}
+</script>
 {% endblock %}

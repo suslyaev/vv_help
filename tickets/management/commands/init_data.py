@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User, Group, Permission
 from django.contrib.contenttypes.models import ContentType
-from tickets.models import Category, Client, TicketStatus, TicketTemplate
+from tickets.models import Category, Client, Organization, TicketStatus, TicketTemplate
 
 
 class Command(BaseCommand):
@@ -69,14 +69,21 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(f'Создана категория: {category.name}')
         
-        # Создаем клиента по умолчанию
+        # Создаем организацию по умолчанию для дефолтного клиента
+        default_org, _ = Organization.objects.get_or_create(name='Неизвестная организация')
+
+        # Создаем клиента по умолчанию и связываем с организацией
         default_client, created = Client.objects.get_or_create(
             name='Неизвестный клиент',
             defaults={
+                'organization': default_org,
                 'contact_person': 'Не указано',
                 'notes': 'Клиент по умолчанию для новых обращений'
             }
         )
+        if not created and not default_client.organization:
+            default_client.organization = default_org
+            default_client.save()
         if created:
             self.stdout.write('Создан клиент по умолчанию')
         

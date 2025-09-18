@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.db.models import Count, Q
 from .models import (
-    Category, Client, TicketStatus, Ticket, TicketAudit, 
+    Category, Client, Organization, TicketStatus, Ticket, TicketAudit, 
     TicketComment, TicketAttachment, TicketTemplate
 )
 
@@ -36,14 +36,15 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
-    list_display = ['name', 'contact_person', 'phone', 'email', 'ticket_count', 'is_active']
-    list_filter = ['is_active']
-    search_fields = ['name', 'contact_person', 'phone', 'email', 'external_id']
+    list_display = ['name', 'organization', 'contact_person', 'phone', 'email', 'ticket_count', 'is_active']
+    list_filter = ['is_active', 'organization']
+    search_fields = ['name', 'organization__name', 'contact_person', 'phone', 'email', 'external_id']
     list_editable = ['is_active']
+    autocomplete_fields = ['organization']
     
     fieldsets = (
         ('Основная информация', {
-            'fields': ('name', 'contact_person', 'phone', 'email')
+            'fields': ('organization', 'name', 'contact_person', 'phone', 'email')
         }),
         ('Дополнительно', {
             'fields': ('external_id', 'notes', 'is_active')
@@ -53,6 +54,12 @@ class ClientAdmin(admin.ModelAdmin):
     def ticket_count(self, obj):
         return obj.ticket_set.count()
     ticket_count.short_description = 'Количество обращений'
+
+
+@admin.register(Organization)
+class OrganizationAdmin(admin.ModelAdmin):
+    list_display = ['name']
+    search_fields = ['name']
 
 
 @admin.register(TicketStatus)
@@ -325,9 +332,9 @@ def close_tickets(modeladmin, request, queryset):
             
             TicketAudit.objects.create(
                 ticket=ticket,
-                action='closed',
+                action='resolved',
                 user=request.user,
-                comment='Закрыто через админку'
+                comment='Решено через админку'
             )
 
 

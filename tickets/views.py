@@ -7,7 +7,7 @@ from django.db.models import Q, Count
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 from django.core.paginator import Paginator
-from .models import Ticket, Category, Client, TicketStatus, TicketComment, TicketTemplate, TicketAudit, TicketAttachment
+from .models import Ticket, Category, Client, Organization, TicketStatus, TicketComment, TicketTemplate, TicketAudit, TicketAttachment
 from .forms import TicketForm, TicketCommentForm, ClientForm, TicketAttachmentForm
 
 
@@ -574,7 +574,16 @@ def client_create(request):
     if request.method == 'POST':
         form = ClientForm(request.POST)
         if form.is_valid():
-            client = form.save()
+            client = form.save(commit=False)
+            # Обработка autocomplete Organization
+            org_id = (request.POST.get('organization_id') or '').strip()
+            org_name_text = (request.POST.get('organization') or '').strip()
+            if org_id.isdigit():
+                client.organization = Organization.objects.filter(id=int(org_id)).first()
+            elif org_name_text:
+                # Если ввели текст без выбора — создадим/привяжем организацию по имени
+                client.organization, _ = Organization.objects.get_or_create(name=org_name_text)
+            client.save()
             messages.success(request, f'Клиент "{client.name}" создан')
             return redirect('tickets:client_detail', client_id=client.id)
     else:
@@ -585,6 +594,31 @@ def client_create(request):
     }
     
     return render(request, 'tickets/client_form.html', context)
+
+
+@login_required
+def client_edit(request, client_id):
+    client = get_object_or_404(Client, id=client_id)
+    if request.method == 'POST':
+        form = ClientForm(request.POST, instance=client)
+        if form.is_valid():
+            client = form.save(commit=False)
+            org_id = (request.POST.get('organization_id') or '').strip()
+            org_name_text = (request.POST.get('organization') or '').strip()
+            if org_id.isdigit():
+                client.organization = Organization.objects.filter(id=int(org_id)).first()
+            elif org_name_text:
+                client.organization, _ = Organization.objects.get_or_create(name=org_name_text)
+            else:
+                client.organization = None
+            client.save()
+            messages.success(request, f'Клиент "{client.name}" обновлён')
+            return redirect('tickets:client_detail', client_id=client.id)
+    else:
+        form = ClientForm(instance=client)
+        if client.organization:
+            form.fields['organization'].initial = client.organization.name
+    return render(request, 'tickets/client_form.html', {'form': form, 'client': client})
 
 
 @login_required
@@ -630,19 +664,46 @@ def autocomplete_clients(request):
             Q(phone__icontains=query) |
             Q(email__icontains=query)
         )
-    clients = base_qs.order_by('name')[:10]
+    clients = base_qs.select_related('organization').order_by('name')[:10]
     
     results = []
     for client in clients:
+        display = client.name
+        if client.organization:
+            display = f"{client.organization.name} — {client.name}"
         results.append({
             'id': client.id,
-            'text': client.name,
+            'text': display,
             'contact_person': client.contact_person,
             'phone': client.phone,
             'email': client.email
         })
     
     return JsonResponse({'results': results})
+
+
+@login_required
+def autocomplete_organizations(request):
+    """AJAX autocomplete для организаций"""
+    query = request.GET.get('q', '')
+    base_qs = Organization.objects.all()
+    if len(query) >= 1:
+        base_qs = base_qs.filter(name__icontains=query)
+    orgs = base_qs.order_by('name')[:10]
+    results = [{'id': o.id, 'text': o.name} for o in orgs]
+    return JsonResponse({'results': results})
+
+
+@login_required
+def create_organization(request):
+    """Создание организации (AJAX). Принимает name, возвращает {id, name}."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    name = (request.POST.get('name') or '').strip()
+    if not name:
+        return JsonResponse({'error': 'Введите название организации'}, status=400)
+    org, created = Organization.objects.get_or_create(name=name)
+    return JsonResponse({'id': org.id, 'name': org.name, 'created': created})
 
 
 @login_required
@@ -755,7 +816,7 @@ def analytics(request):
     if not date_to:
         date_to = today.isoformat()
 
-    tickets_qs = Ticket.objects.select_related('category', 'client', 'status', 'assigned_to').all()
+    tickets_qs = Ticket.objects.select_related('category', 'client', 'client__organization', 'status', 'assigned_to').all()
 
     if category_id and str(category_id).isdigit():
         cid = int(category_id)

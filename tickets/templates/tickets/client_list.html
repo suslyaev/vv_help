@@ -45,7 +45,7 @@
                     <thead>
                         <tr>
                             <th>Название</th>
-                            <th>Контактное лицо</th>
+                            <th>Организация</th>
                             <th>Телефон</th>
                             <th>Email</th>
                             <th>Обращений</th>
@@ -61,7 +61,7 @@
                                     {{ client.name }}
                                 </a>
                             </td>
-                            <td>{{ client.contact_person|default:"—" }}</td>
+                            <td>{{ client.organization.name|default:"—" }}</td>
                             <td>{{ client.phone|default:"—" }}</td>
                             <td>{{ client.email|default:"—" }}</td>
                             <td>

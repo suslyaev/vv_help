@@ -261,12 +261,7 @@
                 </div>
                 {% endif %}
                 
-                {% if ticket.closed_at %}
-                <div class="mb-3">
-                    <strong>Закрыто:</strong><br>
-                    <small class="text-muted">{{ ticket.closed_at|date:"d.m.Y H:i" }}</small>
-                </div>
-                {% endif %}
+                
                 
                 {% if ticket.working_time %}
                 <div class="mb-3">
