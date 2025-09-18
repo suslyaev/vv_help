@@ -1,0 +1,198 @@
+{% extends 'tickets/base.html' %}
+
+{% block title %}Дашборд - Система поддержки ВкусВилл{% endblock %}
+{% block page_title %}Дашборд{% endblock %}
+
+{% block page_actions %}
+    <a href="{% url 'tickets:ticket_create' %}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> Новое обращение
+    </a>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Статистика -->
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-primary shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                            Всего обращений
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ total_tickets }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-ticket-detailed fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-success shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                            Открытые
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ open_tickets }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-clock fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-info shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                            Мои обращения
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ my_tickets }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-person-check fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-warning shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                            Просроченные
+                        </div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ overdue_tickets }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-exclamation-triangle fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Последние обращения -->
+    <div class="col-lg-8 mb-4">
+        <div class="card shadow">
+            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-primary">Последние обращения</h6>
+                <a href="{% url 'tickets:ticket_list' %}" class="btn btn-sm btn-primary">Все обращения</a>
+            </div>
+            <div class="card-body">
+                {% if recent_tickets %}
+                    <div class="table-responsive">
+                        <table class="table table-bordered" width="100%" cellspacing="0">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Заголовок</th>
+                                    <th>Клиент</th>
+                                    <th>Статус</th>
+                                    <th>Создано</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ticket in recent_tickets %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'tickets:ticket_detail' ticket.id %}">#{{ ticket.id }}</a>
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'tickets:ticket_detail' ticket.id %}">
+                                            {{ ticket.title|truncatechars:50 }}
+                                        </a>
+                                    </td>
+                                    <td>{{ ticket.client.name }}</td>
+                                    <td>
+                                        <span class="status-badge" style="background-color: {{ ticket.status.color }};">
+                                            {{ ticket.status.name }}
+                                        </span>
+                                    </td>
+                                    <td>{{ ticket.created_at|date:"d.m.Y H:i" }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="text-muted">Нет обращений</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Статистика по статусам -->
+    <div class="col-lg-4 mb-4">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">По статусам</h6>
+            </div>
+            <div class="card-body">
+                {% for status in status_stats %}
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="status-badge" style="background-color: {{ status.color }};">
+                            {{ status.name }}
+                        </span>
+                        <span class="badge bg-secondary">{{ status.ticket_count }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Топ категорий -->
+    <div class="col-lg-12 mb-4">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Популярные категории</h6>
+            </div>
+            <div class="card-body">
+                {% if category_stats %}
+                    <div class="row">
+                        {% for category in category_stats %}
+                        <div class="col-md-4 mb-3">
+                            <div class="card border-left-primary">
+                                <div class="card-body">
+                                    <div class="row no-gutters align-items-center">
+                                        <div class="col mr-2">
+                                            <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                                                {{ category.name }}
+                                            </div>
+                                            <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                                {{ category.ticket_count }} обращений
+                                            </div>
+                                        </div>
+                                        <div class="col-auto">
+                                            <i class="bi bi-tag fa-2x text-gray-300"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">Нет данных по категориям</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

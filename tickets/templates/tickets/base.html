@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Система поддержки ВкусВилл{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .sidebar {
+            min-height: 100vh;
+            background-color: #f8f9fa;
+        }
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: white;
+            font-size: 0.8em;
+        }
+        .priority-low { background-color: #6c757d; }
+        .priority-normal { background-color: #007bff; }
+        .priority-high { background-color: #fd7e14; }
+        .priority-urgent { background-color: #dc3545; }
+        .sla-overdue { color: #dc3545; font-weight: bold; }
+        .sla-warning { color: #fd7e14; font-weight: bold; }
+        .sla-ok { color: #28a745; }
+        
+        /* Autocomplete styles */
+        .autocomplete-container {
+            position: relative;
+        }
+        
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ced4da;
+            border-top: none;
+            border-radius: 0 0 0.375rem 0.375rem;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .autocomplete-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #f8f9fa;
+        }
+        
+        .autocomplete-item:hover,
+        .autocomplete-item.active {
+            background-color: #f8f9fa;
+        }
+        
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+        
+        .autocomplete-text {
+            font-weight: 500;
+        }
+        
+        .autocomplete-subtext {
+            font-size: 0.875em;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <nav class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="position-sticky pt-3">
+                    <div class="text-center mb-4">
+                        <h4 class="text-primary">ВкусВилл</h4>
+                        <small class="text-muted">Система поддержки</small>
+                    </div>
+                    
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" 
+                               href="{% url 'tickets:dashboard' %}">
+                                <i class="bi bi-speedometer2"></i> Дашборд
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'ticket_list' %}active{% endif %}" 
+                               href="{% url 'tickets:ticket_list' %}">
+                                <i class="bi bi-ticket-detailed"></i> Все обращения
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'queue' %}active{% endif %}" 
+                               href="{% url 'tickets:queue' %}">
+                                <i class="bi bi-list-task"></i> Очередь дел
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'client_list' %}active{% endif %}" 
+                               href="{% url 'tickets:client_list' %}">
+                                <i class="bi bi-people"></i> Клиенты
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'analytics' %}active{% endif %}" 
+                               href="{% url 'tickets:analytics' %}">
+                                <i class="bi bi-graph-up"></i> Аналитика
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'admin:index' %}" target="_blank">
+                                <i class="bi bi-gear"></i> Админка
+                            </a>
+                        </li>
+                    </ul>
+                    
+                    <hr>
+                    
+                    <div class="text-center">
+                        <small class="text-muted">
+                            Привет, {{ user.first_name|default:user.username }}!
+                        </small>
+                    </div>
+                </div>
+            </nav>
+
+            <!-- Main content -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">{% block page_title %}Дашборд{% endblock %}</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        {% block page_actions %}{% endblock %}
+                    </div>
+                </div>
+
+                <!-- Messages -->
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+
+                <!-- Page content -->
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+    // Autocomplete functionality
+    document.addEventListener('DOMContentLoaded', function() {
+        const autocompleteFields = document.querySelectorAll('.autocomplete-field');
+        console.log('Найдено autocomplete полей:', autocompleteFields.length);
+        
+        autocompleteFields.forEach(function(field) {
+            console.log('Инициализация поля:', field.name, field.dataset.autocompleteUrl);
+            const container = document.createElement('div');
+            container.className = 'autocomplete-container';
+            field.parentNode.insertBefore(container, field);
+            container.appendChild(field);
+            
+            const dropdown = document.createElement('div');
+            dropdown.className = 'autocomplete-dropdown';
+            container.appendChild(dropdown);
+            
+            let currentRequest = null;
+            let activeIndex = -1;
+            
+            const fetchAndShow = function(query, force = false) {
+                const q = (typeof query === 'string') ? query : this.value.trim();
+                const minLength = parseInt(this.dataset.autocompleteMinLength) || 1;
+                console.log('Input event:', field.name, 'query:', q, 'minLength:', minLength);
+                
+                if (!force && q.length < minLength) {
+                    dropdown.style.display = 'none';
+                    return;
+                }
+                
+                // Отменяем предыдущий запрос
+                if (currentRequest) {
+                    currentRequest.abort();
+                }
+                
+                // Создаем новый запрос
+                const url = this.dataset.autocompleteUrl + '?q=' + encodeURIComponent(q);
+                currentRequest = new XMLHttpRequest();
+                currentRequest.open('GET', url);
+                currentRequest.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                
+                currentRequest.onreadystatechange = function() {
+                    if (currentRequest.readyState === 4) {
+                        console.log('AJAX response:', currentRequest.status, currentRequest.responseText);
+                        if (currentRequest.status === 200) {
+                            const data = JSON.parse(currentRequest.responseText);
+                            showSuggestions(data.results);
+                        }
+                    }
+                };
+                
+                currentRequest.send();
+            };
+
+            field.addEventListener('input', function() {
+                // Если пользователь очистил поле — убрать связанный hidden *_id
+                const formEl = field.closest('form') || document;
+                if ((field.value || '').trim() === '') {
+                    const h = formEl.querySelectorAll('input[type="hidden"][name="' + field.name + '_id"]');
+                    h.forEach(el => el.remove());
+                }
+                fetchAndShow.call(field, field.value);
+            });
+
+            // Показывать варианты при фокусе без ввода
+            field.addEventListener('focus', function() {
+                // Показать список немедленно при фокусе
+                fetchAndShow.call(field, '', true);
+            });
+            
+            function showSuggestions(results) {
+                dropdown.innerHTML = '';
+                activeIndex = -1;
+                
+                if (results.length === 0) {
+                    dropdown.style.display = 'none';
+                    return;
+                }
+                
+                results.forEach(function(result, index) {
+                    const item = document.createElement('div');
+                    item.className = 'autocomplete-item';
+                    item.dataset.value = result.id;
+                    
+                    let html = '<div class="autocomplete-text">' + result.text + '</div>';
+                    if (result.parent) {
+                        html += '<div class="autocomplete-subtext">' + result.parent + '</div>';
+                    } else if (result.contact_person) {
+                        html += '<div class="autocomplete-subtext">' + result.contact_person + '</div>';
+                    } else if (result.username) {
+                        html += '<div class="autocomplete-subtext">' + result.username + '</div>';
+                    }
+                    
+                    item.innerHTML = html;
+                    
+                    item.addEventListener('click', function() {
+                        selectItem(result);
+                    });
+                    
+                    dropdown.appendChild(item);
+                });
+                
+                dropdown.style.display = 'block';
+            }
+            
+            function selectItem(result) {
+                field.value = result.text;
+                dropdown.style.display = 'none';
+                
+                // Создаем/обновляем скрытое поле для отправки ID в пределах формы
+                const formEl = field.closest('form') || document;
+                const existing = formEl.querySelectorAll('input[type="hidden"][name="' + field.name + '_id"]');
+                if (existing.length) {
+                    existing.forEach((el, idx) => { if (idx === 0) { el.value = result.id; } else { el.remove(); } });
+                } else {
+                    const hidden = document.createElement('input');
+                    hidden.type = 'hidden';
+                    hidden.name = field.name + '_id';
+                    hidden.value = result.id;
+                    formEl.appendChild(hidden);
+                }
+            }
+            
+            // Обработка клавиатуры
+            field.addEventListener('keydown', function(e) {
+                const items = dropdown.querySelectorAll('.autocomplete-item');
+                
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    activeIndex = Math.min(activeIndex + 1, items.length - 1);
+                    updateActiveItem(items);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    activeIndex = Math.max(activeIndex - 1, -1);
+                    updateActiveItem(items);
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (activeIndex >= 0 && items[activeIndex]) {
+                        items[activeIndex].click();
+                    }
+                } else if (e.key === 'Escape') {
+                    dropdown.style.display = 'none';
+                    activeIndex = -1;
+                }
+            });
+            
+            function updateActiveItem(items) {
+                items.forEach(function(item, index) {
+                    if (index === activeIndex) {
+                        item.classList.add('active');
+                    } else {
+                        item.classList.remove('active');
+                    }
+                });
+            }
+            
+            // Скрываем dropdown при клике вне его
+            document.addEventListener('click', function(e) {
+                if (!container.contains(e.target)) {
+                    dropdown.style.display = 'none';
+                    activeIndex = -1;
+                }
+            });
+        });
+    });
+    </script>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

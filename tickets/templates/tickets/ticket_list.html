@@ -1,0 +1,191 @@
+{% extends 'tickets/base.html' %}
+{% load widget_tweaks %}
+{% load ticket_filters %}
+
+{% block title %}Список обращений - Система поддержки ВкусВилл{% endblock %}
+{% block page_title %}Все обращения{% endblock %}
+
+{% block page_actions %}
+    <a href="{% url 'tickets:ticket_create' %}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> Новое обращение
+    </a>
+{% endblock %}
+
+{% block content %}
+<!-- Фильтры -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h6 class="m-0 font-weight-bold text-primary">Фильтры</h6>
+    </div>
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label for="search" class="form-label">Поиск</label>
+                <input type="text" class="form-control" id="search" name="search" 
+                       value="{{ current_filters.search|default_if_none:'' }}" placeholder="Введите что-то...">
+            </div>
+            <div class="col-md-2">
+                <label for="status" class="form-label">Статус</label>
+                <select class="form-control" id="status" name="status">
+                    <option value="">Все статусы</option>
+                    {% for status in statuses %}
+                        <option value="{{ status.id }}" {% if current_filters.status == status.id|stringformat:"s" %}selected{% endif %}>
+                            {{ status.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="category" class="form-label">Категория</label>
+                <input type="text" class="form-control autocomplete-field" id="category" name="category"
+                       data-autocomplete-url="/tickets/api/categories/" data-autocomplete-min-length="0"
+                       placeholder="Начните вводить категорию...">
+                <input type="hidden" name="category_id" id="category_id" value="{{ current_filters.category }}">
+            </div>
+            <div class="col-md-2">
+                <label for="priority" class="form-label">Приоритет</label>
+                <select class="form-control" id="priority" name="priority">
+                    <option value="">Все приоритеты</option>
+                    <option value="low" {% if current_filters.priority == 'low' %}selected{% endif %}>Низкий</option>
+                    <option value="normal" {% if current_filters.priority == 'normal' %}selected{% endif %}>Обычный</option>
+                    <option value="high" {% if current_filters.priority == 'high' %}selected{% endif %}>Высокий</option>
+                    <option value="urgent" {% if current_filters.priority == 'urgent' %}selected{% endif %}>Срочный</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="assigned" class="form-label">Исполнитель</label>
+                <select class="form-control" id="assigned" name="assigned">
+                    <option value="">Все исполнители</option>
+                    <option value="me" {% if current_filters.assigned == 'me' %}selected{% endif %}>Мои обращения</option>
+                    <option value="unassigned" {% if current_filters.assigned == 'unassigned' %}selected{% endif %}>Не назначенные</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">&nbsp;</label>
+                <div>
+                    <button type="submit" class="btn btn-primary">Фильтр</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Список обращений -->
+<div class="card shadow">
+    <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">
+            Обращения ({{ page_obj.paginator.count }})
+        </h6>
+    </div>
+    <div class="card-body">
+        {% if page_obj %}
+            <div class="table-responsive">
+                <table class="table table-bordered" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Заголовок</th>
+                            <th>Клиент</th>
+                            <th>Категория</th>
+                            <th>Статус</th>
+                            <th>Приоритет</th>
+                            <th>Исполнитель</th>
+                            <th>Создано</th>
+                            <th>SLA</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ticket in page_obj %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'tickets:ticket_detail' ticket.id %}">#{{ ticket.id }}</a>
+                            </td>
+                            <td>
+                                <a href="{% url 'tickets:ticket_detail' ticket.id %}">
+                                    {{ ticket.title|truncatechars:40 }}
+                                </a>
+                            </td>
+                            <td>{{ ticket.client.name|truncatechars:20 }}</td>
+                            <td>{{ ticket.category.name|truncatechars:20 }}</td>
+                            <td>
+                                <span class="status-badge" style="background-color: {{ ticket.status.color }};">
+                                    {{ ticket.status.name }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge priority-{{ ticket.priority }}">
+                                    {{ ticket.get_priority_display }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if ticket.assigned_to %}
+                                    {{ ticket.assigned_to.get_full_name|default:ticket.assigned_to.username }}
+                                {% else %}
+                                    <span class="text-muted">Не назначен</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ ticket.created_at|date:"d.m.Y H:i" }}</td>
+                            <td>
+                                {% if ticket.is_overdue %}
+                                    <span class="sla-overdue">⚠ Просрочено</span>
+                                {% elif ticket.time_to_deadline %}
+                                    {% with hours=ticket.time_to_deadline.total_seconds|div:3600|floatformat:0 %}
+                                        {% if hours|add:0 < 2 %}
+                                            <span class="sla-warning">⏰ {{ hours }}ч</span>
+                                        {% else %}
+                                            <span class="sla-ok">✓ {{ hours }}ч</span>
+                                        {% endif %}
+                                    {% endwith %}
+                                {% else %}
+                                    <span class="sla-ok">✓ Завершено</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Пагинация -->
+            {% if page_obj.has_other_pages %}
+                <nav aria-label="Page navigation">
+                    <ul class="pagination justify-content-center">
+                        {% if page_obj.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page=1{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Первая</a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Предыдущая</a>
+                            </li>
+                        {% endif %}
+
+                        <li class="page-item active">
+                            <span class="page-link">
+                                Страница {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}
+                            </span>
+                        </li>
+
+                        {% if page_obj.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Следующая</a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Последняя</a>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            {% endif %}
+        {% else %}
+            <div class="text-center py-4">
+                <i class="bi bi-inbox fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">Обращения не найдены</h5>
+                <p class="text-muted">Попробуйте изменить фильтры или создать новое обращение</p>
+                <a href="{% url 'tickets:ticket_create' %}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i> Создать обращение
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

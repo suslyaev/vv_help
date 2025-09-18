@@ -1,0 +1,253 @@
+{% extends 'tickets/base.html' %}
+{% load widget_tweaks %}
+
+{% block title %}
+    {% if ticket %}Редактирование обращения #{{ ticket.id }}{% else %}Новое обращение{% endif %} - Система поддержки ВкусВилл
+{% endblock %}
+
+{% block page_title %}
+    {% if ticket %}Редактирование обращения #{{ ticket.id }}{% else %}Новое обращение{% endif %}
+{% endblock %}
+
+{% block page_actions %}
+    {% if ticket %}
+        <a href="{% url 'tickets:ticket_detail' ticket.id %}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Назад к обращению
+        </a>
+    {% else %}
+        <a href="{% url 'tickets:ticket_list' %}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Все обращения
+        </a>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">
+                    {% if ticket %}Редактирование обращения{% else %}Создание обращения{% endif %}
+                </h6>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="mb-3">
+                                <label for="{{ form.title.id_for_label }}" class="form-label">Заголовок *</label>
+                                {{ form.title|add_class:"form-control" }}
+                                {% if form.title.errors %}
+                                    <div class="text-danger">{{ form.title.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="{{ form.priority.id_for_label }}" class="form-label">Приоритет</label>
+                                {{ form.priority|add_class:"form-control" }}
+                                {% if form.priority.errors %}
+                                    <div class="text-danger">{{ form.priority.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="{{ form.description.id_for_label }}" class="form-label">Описание *</label>
+                        {{ form.description|add_class:"form-control" }}
+                        {% if form.description.errors %}
+                            <div class="text-danger">{{ form.description.errors }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="{{ form.category.id_for_label }}" class="form-label">Категория *</label>
+                                {{ form.category }}
+                                {% if ticket and ticket.category %}
+                                    <script>
+                                        document.addEventListener('DOMContentLoaded', function() {
+                                            const f = document.getElementById('{{ form.category.id_for_label }}');
+                                            if (f) { f.value = '{{ ticket.category|escapejs }}'; }
+                                            let hidden = document.createElement('input');
+                                            hidden.type = 'hidden';
+                                            hidden.name = 'category_id';
+                                            hidden.value = '{{ ticket.category.id }}';
+                                            f.parentNode && f.parentNode.appendChild(hidden);
+                                        });
+                                    </script>
+                                {% endif %}
+                                {% if form.category.errors %}
+                                    <div class="text-danger">{{ form.category.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="{{ form.client.id_for_label }}" class="form-label">Клиент *</label>
+                                {{ form.client }}
+                                {% if ticket and ticket.client %}
+                                    <script>
+                                        document.addEventListener('DOMContentLoaded', function() {
+                                            const f = document.getElementById('{{ form.client.id_for_label }}');
+                                            if (f) { f.value = '{{ ticket.client.name|escapejs }}'; }
+                                            let hidden = document.createElement('input');
+                                            hidden.type = 'hidden';
+                                            hidden.name = 'client_id';
+                                            hidden.value = '{{ ticket.client.id }}';
+                                            f.parentNode && f.parentNode.appendChild(hidden);
+                                        });
+                                    </script>
+                                {% endif %}
+                                {% if form.client.errors %}
+                                    <div class="text-danger">{{ form.client.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="{{ form.status.id_for_label }}" class="form-label">Статус</label>
+                                {{ form.status|add_class:"form-control" }}
+                                {% if form.status.errors %}
+                                    <div class="text-danger">{{ form.status.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="{{ form.assigned_to.id_for_label }}" class="form-label">Исполнитель</label>
+                                {{ form.assigned_to }}
+                                {% if ticket and ticket.assigned_to %}
+                                    <script>
+                                        document.addEventListener('DOMContentLoaded', function() {
+                                            const f = document.getElementById('{{ form.assigned_to.id_for_label }}');
+                                            if (f) { f.value = '{{ ticket.assigned_to.get_full_name|default:ticket.assigned_to.username|escapejs }}'; }
+                                            let hidden = document.createElement('input');
+                                            hidden.type = 'hidden';
+                                            hidden.name = 'assigned_to_id';
+                                            hidden.value = '{{ ticket.assigned_to.id }}';
+                                            f.parentNode && f.parentNode.appendChild(hidden);
+                                        });
+                                    </script>
+                                {% endif %}
+                                {% if form.assigned_to.errors %}
+                                    <div class="text-danger">{{ form.assigned_to.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="{{ form.tags.id_for_label }}" class="form-label">Теги</label>
+                                {{ form.tags|add_class:"form-control" }}
+                                <small class="form-text text-muted">Через запятую</small>
+                                {% if form.tags.errors %}
+                                    <div class="text-danger">{{ form.tags.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="{{ form.external_message_id.id_for_label }}" class="form-label">ID сообщения</label>
+                                {{ form.external_message_id|add_class:"form-control" }}
+                                <small class="form-text text-muted">ID сообщения в чате</small>
+                                {% if form.external_message_id.errors %}
+                                    <div class="text-danger">{{ form.external_message_id.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if not ticket %}
+                    <div class="mb-3">
+                        <label for="{{ form.attachments.id_for_label }}" class="form-label">Вложения</label>
+                        {{ form.attachments|add_class:"form-control" }}
+                        <small class="form-text text-muted">{{ form.attachments.help_text }}</small>
+                        {% if form.attachments.errors %}
+                            <div class="text-danger">{{ form.attachments.errors }}</div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    <div class="d-flex justify-content-between">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle"></i>
+                            {% if ticket %}Сохранить изменения{% else %}Создать обращение{% endif %}
+                        </button>
+                        
+                        {% if ticket %}
+                            <a href="{% url 'tickets:ticket_detail' ticket.id %}" class="btn btn-secondary">
+                                Отмена
+                            </a>
+                        {% else %}
+                            <a href="{% url 'tickets:ticket_list' %}" class="btn btn-secondary">
+                                Отмена
+                            </a>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <!-- Информация о SLA -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Информация о SLA</h6>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">
+                    Контрольные сроки обработки обращений зависят от выбранной категории:
+                </p>
+                <ul class="list-unstyled">
+                    <li><i class="bi bi-clock text-primary"></i> Изменение цен: 1 час</li>
+                    <li><i class="bi bi-clock text-primary"></i> Качество товара: 1 час</li>
+                    <li><i class="bi bi-clock text-primary"></i> Корректировка данных: 2 часа</li>
+                    <li><i class="bi bi-clock text-primary"></i> Поставки: 2 часа</li>
+                    <li><i class="bi bi-clock text-primary"></i> Карточки продуктов: 4 часа</li>
+                    <li><i class="bi bi-clock text-primary"></i> Документооборот: 8-48 часов</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Подсказки -->
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Подсказки</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <h6 class="text-primary">Приоритеты:</h6>
+                    <ul class="list-unstyled small">
+                        <li><span class="badge priority-low">Низкий</span> - Обычные вопросы</li>
+                        <li><span class="badge priority-normal">Обычный</span> - Стандартные обращения</li>
+                        <li><span class="badge priority-high">Высокий</span> - Важные вопросы</li>
+                        <li><span class="badge priority-urgent">Срочный</span> - Критические проблемы</li>
+                    </ul>
+                </div>
+                
+                <div class="mb-3">
+                    <h6 class="text-primary">Статусы:</h6>
+                    <ul class="list-unstyled small">
+                        <li><span class="status-badge" style="background-color: #28a745;">Новое</span> - Только создано</li>
+                        <li><span class="status-badge" style="background-color: #007bff;">В работе</span> - Взят в работу</li>
+                        <li><span class="status-badge" style="background-color: #ffc107;">Ожидает ответа</span> - Ждет ответа клиента</li>
+                        <li><span class="status-badge" style="background-color: #17a2b8;">Решено</span> - Проблема решена</li>
+                        <li><span class="status-badge" style="background-color: #6c757d;">Закрыто</span> - Обращение закрыто</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,233 @@
+{% extends 'tickets/base.html' %}
+{% load static %}
+
+{% block title %}Аналитика - Система поддержки ВкусВилл{% endblock %}
+{% block page_title %}Аналитика{% endblock %}
+
+{% block content %}
+<style>
+/* Используем Bootstrap ratio для корректных пропорций графиков */
+</style>
+<div class="card mb-4">
+    <div class="card-header">
+        <h6 class="m-0 font-weight-bold text-primary">Фильтры</h6>
+    </div>
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">Категория</label>
+                <input type="text" class="form-control form-control-sm autocomplete-field" name="category"
+                       data-autocomplete-url="/tickets/api/categories/" data-autocomplete-min-length="0"
+                       placeholder="Начните вводить категорию..." value="{{ filters.category_name }}">
+                <input type="hidden" name="category_id" value="{{ filters.category_id }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Клиент</label>
+                <input type="text" class="form-control form-control-sm autocomplete-field" name="client"
+                       data-autocomplete-url="/tickets/api/clients/" data-autocomplete-min-length="0"
+                       placeholder="Начните вводить клиента..." value="{{ filters.client_name }}">
+                <input type="hidden" name="client_id" value="{{ filters.client_id }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Исполнитель</label>
+                <input type="text" class="form-control form-control-sm autocomplete-field" name="assigned_to"
+                       data-autocomplete-url="/tickets/api/users/" data-autocomplete-min-length="0"
+                       placeholder="Начните вводить исполнителя..." value="{{ filters.assigned_to_name }}">
+                <input type="hidden" name="assigned_to_id" value="{{ filters.assigned_to_id }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Дата с</label>
+                <input type="date" class="form-control form-control-sm" name="date_from" value="{{ filters.date_from }}">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">Дата до</label>
+                <input type="date" class="form-control form-control-sm" name="date_to" value="{{ filters.date_to }}">
+            </div>
+            <div class="col-md-1 d-flex align-items-end justify-content-end">
+                <div class="btn-group" role="group">
+                    <button type="submit" class="btn btn-primary btn-sm" title="Показать"><i class="bi bi-check2"></i></button>
+                    <a href="{% url 'tickets:analytics' %}" class="btn btn-secondary btn-sm" title="Сброс"><i class="bi bi-arrow-counterclockwise"></i></a>
+                </div>
+            </div>
+        </form>
+    </div>
+    
+    <div class="card-body border-top">
+        <div class="row">
+            <div class="col-md-8">
+                <h6 class="text-primary">Динамика обращений</h6>
+                <div class="ratio ratio-16x9">
+                    <canvas id="ticketsByDay" class="w-100 h-100"></canvas>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <h6 class="text-primary">ТОП-20 тегов</h6>
+                <div class="ratio ratio-1x1">
+                    <canvas id="tagsChart" class="w-100 h-100"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow">
+    <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">Обращения ({{ page_obj.paginator.count }})</h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered" width="100%" cellspacing="0">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Заголовок</th>
+                        <th>Клиент</th>
+                        <th>Категория</th>
+                        <th>Статус</th>
+                        <th>Исполнитель</th>
+                        <th>Создано</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ticket in page_obj %}
+                    <tr>
+                        <td><a href="{% url 'tickets:ticket_detail' ticket.id %}">#{{ ticket.id }}</a></td>
+                        <td>{{ ticket.title|truncatechars:60 }}</td>
+                        <td>{{ ticket.client.name }}</td>
+                        <td>{{ ticket.category.name }}</td>
+                        <td>{{ ticket.status.name }}</td>
+                        <td>{% if ticket.assigned_to %}{{ ticket.assigned_to.get_full_name|default:ticket.assigned_to.username }}{% else %}—{% endif %}</td>
+                        <td>{{ ticket.created_at|date:"d.m.Y" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        {% if page_obj.has_other_pages %}
+        <nav aria-label="Page navigation">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                    <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">Предыдущая</a></li>
+                {% endif %}
+                <li class="page-item active"><span class="page-link">Страница {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}</span></li>
+                {% if page_obj.has_next %}
+                    <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">Следующая</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function(){
+        // Линейный график по дням
+        const byDay = {{ chart_by_day_json|safe }};
+        const labels = byDay.map(p => p.day);
+        const data = byDay.map(p => p.cnt);
+        const ctx1 = document.getElementById('ticketsByDay');
+        if (ctx1) {
+            new Chart(ctx1, {
+                type: 'line',
+                data: { labels, datasets: [{ label: 'Обращений', data, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,.15)', pointRadius: 3, pointHoverRadius: 6, pointHitRadius: 12, pointBorderWidth: 1, tension: 0.25, fill: false }]},
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    animation: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            enabled: true,
+                            callbacks: {
+                                title: (items) => {
+                                    if (!items || !items.length) return '';
+                                    const iso = items[0].label || '';
+                                    const [y,m,d] = (iso || '').split('-');
+                                    return (d && m && y) ? `${d}.${m}.${y}` : iso;
+                                },
+                                label: (ctx) => `Количество: ${ctx.parsed.y}`
+                            }
+                        }
+                    },
+                    elements: {
+                        point: { radius: 3, hitRadius: 12, hoverRadius: 6 }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                autoSkip: true,
+                                maxTicksLimit: 12,
+                                callback: function(value, index, ticks) {
+                                    const iso = this.getLabelForValue(value);
+                                    const [y,m,d] = (iso || '').split('-');
+                                    return (d && m && y) ? `${d}.${m}.${y}` : iso;
+                                }
+                            }
+                        },
+                        y: { beginAtZero: true, grace: '10%' }
+                    }
+                }
+            });
+        }
+
+        // Диаграмма тегов
+        const tags = {{ chart_tags_json|safe }};
+        const tLabels = tags.map(t => t.tag);
+        const tData = tags.map(t => t.count);
+        const ctx2 = document.getElementById('tagsChart');
+        if (ctx2) {
+            new Chart(ctx2, {
+                type: 'doughnut',
+                data: {
+                    labels: tLabels,
+                    datasets: [{
+                        label: 'Использование тегов',
+                        data: tData,
+                        backgroundColor: tLabels.map((_, i) => `hsl(${(i*37)%360}deg 70% 55%)`),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    animation: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                generateLabels: function(chart) {
+                                    const data = chart.data;
+                                    const meta = chart.getDatasetMeta(0);
+                                    const ds = data.datasets[0] || { data: [] };
+                                    return (data.labels || []).map((label, i) => {
+                                        const style = meta.controller.getStyle(i);
+                                        const value = ds.data[i] || 0;
+                                        return {
+                                            text: `${label} (${value})`,
+                                            fillStyle: Array.isArray(ds.backgroundColor) ? ds.backgroundColor[i] : style.backgroundColor,
+                                            strokeStyle: style.borderColor,
+                                            lineWidth: style.borderWidth,
+                                            hidden: meta.data[i] ? meta.data[i].hidden : false,
+                                            index: i
+                                        };
+                                    });
+                                }
+                            }
+                        },
+                        tooltip: { enabled: true }
+                    },
+                    cutout: '50%'
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}
+
+

@@ -1,0 +1,326 @@
+{% extends 'tickets/base.html' %}
+{% load widget_tweaks %}
+{% load ticket_filters %}
+
+{% block title %}Обращение #{{ ticket.id }} - Система поддержки ВкусВилл{% endblock %}
+{% block page_title %}Обращение #{{ ticket.id }}{% endblock %}
+
+{% block page_actions %}
+    <div class="btn-group" role="group">
+        {% if not ticket.assigned_to or ticket.assigned_to == user %}
+            {% if not ticket.status.is_working %}
+                <a href="{% url 'tickets:take_ticket' ticket.id %}" class="btn btn-success">
+                    <i class="bi bi-hand-index"></i> Взять в работу
+                </a>
+            {% endif %}
+        {% endif %}
+        
+        {% if ticket.assigned_to == user and not ticket.status.is_final %}
+            <a href="{% url 'tickets:resolve_ticket' ticket.id %}" class="btn btn-primary">
+                <i class="bi bi-check-circle"></i> Решить
+            </a>
+        {% endif %}
+        
+        <a href="{% url 'tickets:ticket_edit' ticket.id %}" class="btn btn-warning">
+            <i class="bi bi-pencil"></i> Редактировать
+        </a>
+        
+        <a href="{% url 'tickets:ticket_list' %}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Все обращения
+        </a>
+    </div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <!-- Основная информация -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-primary">{{ ticket.title }}</h6>
+                <div>
+                    <span class="status-badge" style="background-color: {{ ticket.status.color }};">
+                        {{ ticket.status.name }}
+                    </span>
+                    <span class="badge priority-{{ ticket.priority }} ms-2">
+                        {{ ticket.get_priority_display }}
+                    </span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Клиент:</strong> {{ ticket.client.name }}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Категория:</strong> {{ ticket.category.name }}
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Исполнитель:</strong> 
+                        {% if ticket.assigned_to %}
+                            {{ ticket.assigned_to.get_full_name|default:ticket.assigned_to.username }}
+                        {% else %}
+                            <span class="text-muted">Не назначен</span>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Создано:</strong> {{ ticket.created_at|date:"d.m.Y H:i" }}
+                    </div>
+                </div>
+                
+                {% if ticket.tags %}
+                <div class="mb-3">
+                    <strong>Теги:</strong> 
+                    {% for tag in ticket.tags|split:"," %}
+                        <span class="badge bg-secondary me-1">{{ tag|strip }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                
+                <div class="mb-3">
+                    <strong>Описание:</strong>
+                    <div class="mt-2 p-3 bg-light rounded">
+                        {{ ticket.description|linebreaks }}
+                    </div>
+                </div>
+                
+                {% if ticket.resolution %}
+                <div class="mb-3">
+                    <strong>Решение:</strong>
+                    <div class="mt-2 p-3 bg-success bg-opacity-10 rounded">
+                        {{ ticket.resolution|linebreaks }}
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if ticket.resolution_notes %}
+                <div class="mb-3">
+                    <strong>Заметки к решению:</strong>
+                    <div class="mt-2 p-3 bg-info bg-opacity-10 rounded">
+                        {{ ticket.resolution_notes|linebreaks }}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Вложения -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Вложения</h6>
+            </div>
+            <div class="card-body">
+                {% if attachments %}
+                    <div class="row">
+                        {% for attachment in attachments %}
+                        <div class="col-md-6 mb-3">
+                            <div class="card border">
+                                <div class="card-body p-3">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div class="flex-grow-1">
+                                            <h6 class="card-title mb-1">
+                                                <i class="bi bi-paperclip"></i> {{ attachment.filename }}
+                                            </h6>
+                                            <small class="text-muted">
+                                                {{ attachment.file_size|filesizeformat }} • 
+                                                {{ attachment.uploaded_by.get_full_name|default:attachment.uploaded_by.username }} • 
+                                                {{ attachment.uploaded_at|date:"d.m.Y H:i" }}
+                                            </small>
+                                        </div>
+                                        <div class="btn-group" role="group">
+                                            <a href="{{ attachment.file.url }}" class="btn btn-sm btn-outline-primary" target="_blank">
+                                                <i class="bi bi-download"></i>
+                                            </a>
+                                            {% if attachment.uploaded_by == user or user.is_staff %}
+                                            <a href="{% url 'tickets:delete_attachment' attachment.id %}" 
+                                               class="btn btn-sm btn-outline-danger"
+                                               onclick="return confirm('Удалить файл {{ attachment.filename }}?')">
+                                                <i class="bi bi-trash"></i>
+                                            </a>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">Вложений пока нет</p>
+                {% endif %}
+                
+                <!-- Форма загрузки вложений -->
+                <hr>
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="{{ attachment_form.file.id_for_label }}" class="form-label">Загрузить файлы</label>
+                        {{ attachment_form.file|add_class:"form-control" }}
+                        <small class="form-text text-muted">
+                            Поддерживаемые форматы: PDF, DOC, DOCX, XLS, XLSX, JPG, JPEG, PNG, GIF, TXT, ZIP, RAR
+                        </small>
+                        {% if attachment_form.file.errors %}
+                            <div class="text-danger">{{ attachment_form.file.errors }}</div>
+                        {% endif %}
+                    </div>
+                    <button type="submit" name="attachment" class="btn btn-primary">
+                        <i class="bi bi-upload"></i> Загрузить файлы
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Комментарии -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Комментарии</h6>
+            </div>
+            <div class="card-body">
+                {% if comments %}
+                    {% for comment in comments %}
+                    <div class="mb-3 p-3 border rounded {% if comment.is_internal %}bg-warning bg-opacity-10{% endif %}">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <strong>{{ comment.author.get_full_name|default:comment.author.username }}</strong>
+                                {% if comment.is_internal %}
+                                    <span class="badge bg-warning text-dark ms-2">Внутренний</span>
+                                {% endif %}
+                            </div>
+                            <small class="text-muted">{{ comment.created_at|date:"d.m.Y H:i" }}</small>
+                        </div>
+                        <div>{{ comment.content|linebreaks }}</div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted">Комментариев пока нет</p>
+                {% endif %}
+                
+                <!-- Форма добавления комментария -->
+                <hr>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="{{ comment_form.content.id_for_label }}" class="form-label">Добавить комментарий</label>
+                        {{ comment_form.content|add_class:"form-control" }}
+                        {% if comment_form.content.errors %}
+                            <div class="text-danger">{{ comment_form.content.errors }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            {{ comment_form.is_internal|add_class:"form-check-input" }}
+                            <label class="form-check-label" for="{{ comment_form.is_internal.id_for_label }}">
+                                Внутренний комментарий (не виден клиенту)
+                            </label>
+                        </div>
+                    </div>
+                    <button type="submit" name="comment" class="btn btn-primary">
+                        <i class="bi bi-chat-dots"></i> Добавить комментарий
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <!-- Информация о времени -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Временная информация</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <strong>Создано:</strong><br>
+                    <small class="text-muted">{{ ticket.created_at|date:"d.m.Y H:i" }}</small>
+                </div>
+                
+                {% if ticket.taken_at %}
+                <div class="mb-3">
+                    <strong>Взято в работу:</strong><br>
+                    <small class="text-muted">{{ ticket.taken_at|date:"d.m.Y H:i" }}</small>
+                </div>
+                {% endif %}
+                
+                {% if ticket.resolved_at %}
+                <div class="mb-3">
+                    <strong>Решено:</strong><br>
+                    <small class="text-muted">{{ ticket.resolved_at|date:"d.m.Y H:i" }}</small>
+                </div>
+                {% endif %}
+                
+                {% if ticket.closed_at %}
+                <div class="mb-3">
+                    <strong>Закрыто:</strong><br>
+                    <small class="text-muted">{{ ticket.closed_at|date:"d.m.Y H:i" }}</small>
+                </div>
+                {% endif %}
+                
+                {% if ticket.working_time %}
+                <div class="mb-3">
+                    <strong>Время в работе:</strong><br>
+                    <small class="text-muted">{{ ticket.working_time_display }}</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- SLA информация -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">SLA</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <strong>Контрольный срок:</strong><br>
+                    <small class="text-muted">{{ ticket.category.sla_hours }} часов</small>
+                </div>
+                
+                <div class="mb-3">
+                    <strong>Статус SLA:</strong><br>
+                    {% if ticket.is_overdue %}
+                        <span class="sla-overdue">⚠ Просрочено</span>
+                    {% elif ticket.time_to_deadline %}
+                        {% with hours=ticket.time_to_deadline.total_seconds|div:3600|floatformat:0 %}
+                            {% if hours|add:0 < 2 %}
+                                <span class="sla-warning">⏰ {{ hours }}ч до дедлайна</span>
+                            {% else %}
+                                <span class="sla-ok">✓ {{ hours }}ч до дедлайна</span>
+                            {% endif %}
+                        {% endwith %}
+                    {% else %}
+                        <span class="sla-ok">✓ Завершено</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Дополнительная информация -->
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Дополнительно</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <strong>Создано пользователем:</strong><br>
+                    <small class="text-muted">{{ ticket.created_by.get_full_name|default:ticket.created_by.username }}</small>
+                </div>
+                
+                {% if ticket.external_message_id %}
+                <div class="mb-3">
+                    <strong>ID сообщения:</strong><br>
+                    <small class="text-muted">{{ ticket.external_message_id }}</small>
+                </div>
+                {% endif %}
+                
+                <div class="mb-3">
+                    <strong>Обновлено:</strong><br>
+                    <small class="text-muted">{{ ticket.updated_at|date:"d.m.Y H:i" }}</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

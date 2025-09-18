@@ -1,0 +1,130 @@
+{% extends 'tickets/base.html' %}
+
+{% block title %}Список клиентов - Система поддержки ВкусВилл{% endblock %}
+{% block page_title %}Клиенты{% endblock %}
+
+{% block page_actions %}
+    <a href="{% url 'tickets:client_create' %}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> Новый клиент
+    </a>
+{% endblock %}
+
+{% block content %}
+<!-- Поиск -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h6 class="m-0 font-weight-bold text-primary">Поиск клиентов</h6>
+    </div>
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-8">
+                <input type="text" class="form-control" name="search" 
+                       value="{{ search_query|default_if_none:'' }}" placeholder="Введите что-то...">
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary">Поиск</button>
+                {% if search_query %}
+                    <a href="{% url 'tickets:client_list' %}" class="btn btn-secondary">Сбросить</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Список клиентов -->
+<div class="card shadow">
+    <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">
+            Клиенты ({{ page_obj.paginator.count }})
+        </h6>
+    </div>
+    <div class="card-body">
+        {% if page_obj %}
+            <div class="table-responsive">
+                <table class="table table-bordered" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>Название</th>
+                            <th>Контактное лицо</th>
+                            <th>Телефон</th>
+                            <th>Email</th>
+                            <th>Обращений</th>
+                            <th>Статус</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for client in page_obj %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'tickets:client_detail' client.id %}">
+                                    {{ client.name }}
+                                </a>
+                            </td>
+                            <td>{{ client.contact_person|default:"—" }}</td>
+                            <td>{{ client.phone|default:"—" }}</td>
+                            <td>{{ client.email|default:"—" }}</td>
+                            <td>
+                                <span class="badge bg-primary">{{ client.ticket_count }}</span>
+                            </td>
+                            <td>
+                                {% if client.is_active %}
+                                    <span class="badge bg-success">Активен</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Неактивен</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{% url 'tickets:client_detail' client.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-eye"></i> Просмотр
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Пагинация -->
+            {% if page_obj.has_other_pages %}
+                <nav aria-label="Page navigation">
+                    <ul class="pagination justify-content-center">
+                        {% if page_obj.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}">Первая</a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">Предыдущая</a>
+                            </li>
+                        {% endif %}
+
+                        <li class="page-item active">
+                            <span class="page-link">
+                                Страница {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}
+                            </span>
+                        </li>
+
+                        {% if page_obj.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">Следующая</a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}">Последняя</a>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            {% endif %}
+        {% else %}
+            <div class="text-center py-4">
+                <i class="bi bi-people fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">Клиенты не найдены</h5>
+                <p class="text-muted">Попробуйте изменить поисковый запрос или создать нового клиента</p>
+                <a href="{% url 'tickets:client_create' %}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i> Создать клиента
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

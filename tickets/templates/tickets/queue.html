@@ -1,0 +1,201 @@
+{% extends 'tickets/base.html' %}
+
+{% block title %}Очередь дел - Система поддержки ВкусВилл{% endblock %}
+{% block page_title %}Очередь дел{% endblock %}
+
+{% block page_actions %}
+    <a href="{% url 'tickets:ticket_create' %}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> Новое обращение
+    </a>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Не назначенные обращения -->
+    <div class="col-lg-4 mb-4">
+        <div class="card shadow">
+            <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-warning">
+                    Не назначенные ({{ unassigned_tickets.count }})
+                </h6>
+            </div>
+            <div class="card-body">
+                {% if unassigned_tickets %}
+                    {% for ticket in unassigned_tickets %}
+                    <div class="card mb-3 border-warning">
+                        <div class="card-body p-3">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="card-title mb-0">
+                                    <a href="{% url 'tickets:ticket_detail' ticket.id %}">#{{ ticket.id }}</a>
+                                </h6>
+                                <span class="badge priority-{{ ticket.priority }}">
+                                    {{ ticket.get_priority_display }}
+                                </span>
+                            </div>
+                            <p class="card-text small">{{ ticket.title|truncatechars:60 }}</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">{{ ticket.client.name }}</small>
+                                <small class="text-muted">{{ ticket.created_at|date:"d.m H:i" }}</small>
+                            </div>
+                            <div class="mt-2">
+                                <a href="{% url 'tickets:take_ticket' ticket.id %}" class="btn btn-sm btn-success">
+                                    <i class="bi bi-hand-index"></i> Взять
+                                </a>
+                                <a href="{% url 'tickets:ticket_detail' ticket.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-eye"></i> Просмотр
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-check-circle fa-2x text-success mb-2"></i>
+                        <p class="text-muted mb-0">Все обращения назначены!</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Мои обращения -->
+    <div class="col-lg-4 mb-4">
+        <div class="card shadow">
+            <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-info">
+                    Мои обращения ({{ my_tickets.count }})
+                </h6>
+            </div>
+            <div class="card-body">
+                {% if my_tickets %}
+                    {% for ticket in my_tickets %}
+                    <div class="card mb-3 border-info">
+                        <div class="card-body p-3">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="card-title mb-0">
+                                    <a href="{% url 'tickets:ticket_detail' ticket.id %}">#{{ ticket.id }}</a>
+                                </h6>
+                                <div>
+                                    <span class="badge priority-{{ ticket.priority }}">
+                                        {{ ticket.get_priority_display }}
+                                    </span>
+                                    <span class="status-badge" style="background-color: {{ ticket.status.color }};">
+                                        {{ ticket.status.name }}
+                                    </span>
+                                </div>
+                            </div>
+                            <p class="card-text small">{{ ticket.title|truncatechars:60 }}</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">{{ ticket.client.name }}</small>
+                                <small class="text-muted">{{ ticket.created_at|date:"d.m H:i" }}</small>
+                            </div>
+                            <div class="mt-2">
+                                {% if not ticket.status.is_final %}
+                                    <a href="{% url 'tickets:resolve_ticket' ticket.id %}" class="btn btn-sm btn-primary">
+                                        <i class="bi bi-check-circle"></i> Решить
+                                    </a>
+                                {% endif %}
+                                <a href="{% url 'tickets:ticket_detail' ticket.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-eye"></i> Просмотр
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-inbox fa-2x text-muted mb-2"></i>
+                        <p class="text-muted mb-0">У вас нет назначенных обращений</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Просроченные обращения -->
+    <div class="col-lg-4 mb-4">
+        <div class="card shadow">
+            <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-danger">
+                    Просроченные ({{ overdue_tickets.count }})
+                </h6>
+            </div>
+            <div class="card-body">
+                {% if overdue_tickets %}
+                    {% for ticket in overdue_tickets %}
+                    <div class="card mb-3 border-danger">
+                        <div class="card-body p-3">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="card-title mb-0">
+                                    <a href="{% url 'tickets:ticket_detail' ticket.id %}">#{{ ticket.id }}</a>
+                                </h6>
+                                <span class="badge priority-{{ ticket.priority }}">
+                                    {{ ticket.get_priority_display }}
+                                </span>
+                            </div>
+                            <p class="card-text small">{{ ticket.title|truncatechars:60 }}</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">{{ ticket.client.name }}</small>
+                                <small class="text-danger">{{ ticket.created_at|date:"d.m H:i" }}</small>
+                            </div>
+                            <div class="mt-2">
+                                {% if not ticket.assigned_to %}
+                                    <a href="{% url 'tickets:take_ticket' ticket.id %}" class="btn btn-sm btn-danger">
+                                        <i class="bi bi-hand-index"></i> Срочно взять
+                                    </a>
+                                {% endif %}
+                                <a href="{% url 'tickets:ticket_detail' ticket.id %}" class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-eye"></i> Просмотр
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-check-circle fa-2x text-success mb-2"></i>
+                        <p class="text-muted mb-0">Нет просроченных обращений!</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Статистика -->
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Статистика очереди</h6>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <div class="border-end">
+                            <h4 class="text-warning">{{ unassigned_tickets.count }}</h4>
+                            <p class="text-muted mb-0">Не назначенные</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border-end">
+                            <h4 class="text-info">{{ my_tickets.count }}</h4>
+                            <p class="text-muted mb-0">Мои обращения</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border-end">
+                            <h4 class="text-danger">{{ overdue_tickets.count }}</h4>
+                            <p class="text-muted mb-0">Просроченные</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <h4 class="text-primary">{{ unassigned_tickets.count|add:my_tickets.count|add:overdue_tickets.count }}</h4>
+                        <p class="text-muted mb-0">Всего в очереди</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
