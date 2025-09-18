@@ -31,7 +31,7 @@ def dashboard(request):
     # Обращения по статусам
     status_stats = TicketStatus.objects.annotate(
         ticket_count=Count('ticket')
-    ).order_by('order')
+    ).exclude(name='Закрыто').order_by('order')
     
     # Обращения по категориям
     category_stats = Category.objects.annotate(
@@ -99,7 +99,7 @@ def ticket_list(request):
     page_obj = paginator.get_page(page_number)
     
     # Данные для фильтров (категории больше не нужны для select)
-    statuses = TicketStatus.objects.all().order_by('order')
+    statuses = TicketStatus.objects.exclude(name='Закрыто').order_by('order')
     
     context = {
         'page_obj': page_obj,
@@ -198,7 +198,8 @@ def ticket_create(request):
             # Обрабатываем autocomplete поля
             category_id = request.POST.get('category_id')
             client_id = request.POST.get('client_id')
-            assigned_to_id = request.POST.get('assigned_to_id')
+            assigned_to_text = (request.POST.get('assigned_to') or '').strip()
+            assigned_to_id_raw = (request.POST.get('assigned_to_id') or '').strip()
             
             if category_id:
                 try:
@@ -212,11 +213,16 @@ def ticket_create(request):
                 except Client.DoesNotExist:
                     pass
             
-            if assigned_to_id:
+            if not assigned_to_text:
+                ticket.assigned_to = None
+            elif assigned_to_id_raw.isdigit():
                 try:
-                    ticket.assigned_to = User.objects.get(id=assigned_to_id)
+                    ticket.assigned_to = User.objects.get(id=int(assigned_to_id_raw))
                 except User.DoesNotExist:
-                    pass
+                    ticket.assigned_to = None
+            else:
+                # Если hidden assigned_to_id отсутствует (пользователь очистил поле) — снимаем исполнителя
+                ticket.assigned_to = None
             
             ticket.save()
             
@@ -258,6 +264,7 @@ def ticket_create(request):
     
     context = {
         'form': form,
+        'categories_for_sla': Category.objects.filter(is_active=True).order_by('sla_hours', 'name')[:6],
     }
     
     return render(request, 'tickets/ticket_form.html', context)
@@ -279,7 +286,8 @@ def ticket_edit(request, ticket_id):
             # Обрабатываем autocomplete поля
             category_id = request.POST.get('category_id')
             client_id = request.POST.get('client_id')
-            assigned_to_id = request.POST.get('assigned_to_id')
+            assigned_to_text = (request.POST.get('assigned_to') or '').strip()
+            assigned_to_id_raw = (request.POST.get('assigned_to_id') or '').strip()
             
             if category_id:
                 try:
@@ -293,11 +301,15 @@ def ticket_edit(request, ticket_id):
                 except Client.DoesNotExist:
                     pass
             
-            if assigned_to_id:
+            if not assigned_to_text:
+                ticket.assigned_to = None
+            elif assigned_to_id_raw.isdigit():
                 try:
-                    ticket.assigned_to = User.objects.get(id=assigned_to_id)
+                    ticket.assigned_to = User.objects.get(id=int(assigned_to_id_raw))
                 except User.DoesNotExist:
-                    pass
+                    ticket.assigned_to = None
+            else:
+                ticket.assigned_to = None
             
             ticket.save()
             
@@ -337,6 +349,7 @@ def ticket_edit(request, ticket_id):
     context = {
         'form': form,
         'ticket': ticket,
+        'categories_for_sla': Category.objects.filter(is_active=True).order_by('sla_hours', 'name')[:6],
     }
     
     return render(request, 'tickets/ticket_form.html', context)
@@ -419,6 +432,92 @@ def resolve_ticket(request, ticket_id):
     
     return render(request, 'tickets/ticket_resolve.html', context)
 
+
+@login_required
+def close_ticket(request, ticket_id):
+    """Закрыть обращение (подтверждено заявителем) → считаем как Решено"""
+    ticket = get_object_or_404(Ticket, id=ticket_id)
+    
+    # Находим статус "Решено" (единственный финальный)
+    resolved_status = TicketStatus.objects.filter(name='Решено').first()
+    if not resolved_status:
+        resolved_status = TicketStatus.objects.filter(is_final=True).first()
+    if not resolved_status:
+        messages.error(request, 'Финальный статус "Решено" не найден')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    # Обновляем обращение
+    ticket.status = resolved_status
+    if not ticket.resolved_at:
+        ticket.resolved_at = timezone.now()
+    ticket.save()
+    
+    # Аудит
+    TicketAudit.objects.create(
+        ticket=ticket,
+        action='resolved',
+        user=request.user,
+        comment='Обращение подтверждено заявителем (Решено)'
+    )
+    
+    messages.success(request, f'Обращение #{ticket.id} решено')
+    return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+
+
+@login_required
+def set_waiting(request, ticket_id):
+    """Перевести статус в "Ожидает ответа". Разрешено только из статусов с is_working=True и если уже не в этом статусе."""
+    ticket = get_object_or_404(Ticket, id=ticket_id)
+    if not ticket.status.is_working:
+        messages.error(request, 'Перевод возможен только из статуса "В работе"')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    waiting_status = TicketStatus.objects.filter(name='Ожидает ответа').first()
+    if not waiting_status:
+        messages.error(request, 'Статус "Ожидает ответа" не найден')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    if ticket.status == waiting_status:
+        messages.info(request, 'Статус уже "Ожидает ответа"')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    old_status = ticket.status
+    ticket.status = waiting_status
+    ticket.save()
+    TicketAudit.objects.create(
+        ticket=ticket,
+        action='status_changed',
+        user=request.user,
+        old_value=old_status.name,
+        new_value=waiting_status.name,
+        comment='Переведено в статус Ожидает ответа'
+    )
+    messages.success(request, f'Обращение #{ticket.id} переведено в статус "Ожидает ответа"')
+    return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+
+
+@login_required
+def return_to_work(request, ticket_id):
+    """Вернуть из "Ожидает ответа" в рабочий статус."""
+    ticket = get_object_or_404(Ticket, id=ticket_id)
+    if ticket.status and ticket.status.name != 'Ожидает ответа':
+        messages.error(request, 'Возврат возможен только из статуса "Ожидает ответа"')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    working_status = TicketStatus.objects.filter(is_working=True).exclude(name='Ожидает ответа').first()
+    if not working_status:
+        messages.error(request, 'Рабочий статус не найден')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    old_status = ticket.status
+    ticket.status = working_status
+    # taken_at оставляем как есть; исполнитель не меняется
+    ticket.save()
+    TicketAudit.objects.create(
+        ticket=ticket,
+        action='status_changed',
+        user=request.user,
+        old_value=old_status.name if old_status else '',
+        new_value=working_status.name,
+        comment='Возвращено в работу из статуса Ожидает ответа'
+    )
+    messages.success(request, f'Обращение #{ticket.id} возвращено в работу')
+    return redirect('tickets:ticket_detail', ticket_id=ticket.id)
 
 @login_required
 def client_list(request):

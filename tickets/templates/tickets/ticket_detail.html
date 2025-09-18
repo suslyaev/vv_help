@@ -7,10 +7,20 @@
 
 {% block page_actions %}
     <div class="btn-group" role="group">
-        {% if not ticket.assigned_to or ticket.assigned_to == user %}
-            {% if not ticket.status.is_working %}
+        {% if not ticket.status.is_working %}
+            {% if not ticket.assigned_to or ticket.assigned_to == user %}
                 <a href="{% url 'tickets:take_ticket' ticket.id %}" class="btn btn-success">
                     <i class="bi bi-hand-index"></i> Взять в работу
+                </a>
+            {% endif %}
+        {% else %}
+            {% if ticket.status.name != 'Ожидает ответа' %}
+                <a href="{% url 'tickets:set_waiting' ticket.id %}" class="btn btn-warning">
+                    <i class="bi bi-pause-circle"></i> Ожидает ответа
+                </a>
+            {% else %}
+                <a href="{% url 'tickets:return_to_work' ticket.id %}" class="btn btn-primary">
+                    <i class="bi bi-play-circle"></i> Вернуть в работу
                 </a>
             {% endif %}
         {% endif %}
@@ -261,7 +271,7 @@
                 {% if ticket.working_time %}
                 <div class="mb-3">
                     <strong>Время в работе:</strong><br>
-                    <small class="text-muted">{{ ticket.working_time_display }}</small>
+                    <small class="text-muted">{{ ticket.working_time|format_timedelta }}</small>
                 </div>
                 {% endif %}
             </div>

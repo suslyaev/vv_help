@@ -216,8 +216,22 @@ class TicketTemplate(models.Model):
     """Шаблоны решений для быстрого ответа"""
     name = models.CharField('Название', max_length=200)
     category = models.ForeignKey(Category, on_delete=models.CASCADE, verbose_name='Категория')
-    title_template = models.CharField('Шаблон заголовка', max_length=300, blank=True)
-    content_template = models.TextField('Шаблон содержания')
+    title_template = models.CharField(
+        'Шаблон заголовка',
+        max_length=300,
+        blank=True,
+        help_text=(
+            'Доступные плейсхолдеры: #{ticket_id}, {category}, {created_at}, {sla_hours}. '
+            'Формат {created_at}: ДД.ММ.ГГГГ ЧЧ:ММ'
+        )
+    )
+    content_template = models.TextField(
+        'Шаблон содержания',
+        help_text=(
+            'Доступные плейсхолдеры: #{ticket_id}, {category}, {created_at}, {sla_hours}. '
+            'Формат {created_at}: ДД.ММ.ГГГГ ЧЧ:ММ'
+        )
+    )
     is_active = models.BooleanField('Активен', default=True)
     created_by = models.ForeignKey(User, on_delete=models.PROTECT, verbose_name='Создано пользователем')
     created_at = models.DateTimeField('Создано', auto_now_add=True)

@@ -129,11 +129,30 @@
                                         document.addEventListener('DOMContentLoaded', function() {
                                             const f = document.getElementById('{{ form.assigned_to.id_for_label }}');
                                             if (f) { f.value = '{{ ticket.assigned_to.get_full_name|default:ticket.assigned_to.username|escapejs }}'; }
-                                            let hidden = document.createElement('input');
-                                            hidden.type = 'hidden';
-                                            hidden.name = 'assigned_to_id';
-                                            hidden.value = '{{ ticket.assigned_to.id }}';
-                                            f.parentNode && f.parentNode.appendChild(hidden);
+                                            const formEl = f.closest('form');
+                                            if (formEl && !formEl.querySelector('input[name="assigned_to_id"]')) {
+                                                let hidden = document.createElement('input');
+                                                hidden.type = 'hidden';
+                                                hidden.name = 'assigned_to_id';
+                                                hidden.value = '{{ ticket.assigned_to.id }}';
+                                                formEl.appendChild(hidden);
+                                            }
+                                        });
+                                    </script>
+                                {% else %}
+                                    <script>
+                                        document.addEventListener('DOMContentLoaded', function() {
+                                            const f = document.getElementById('{{ form.assigned_to.id_for_label }}');
+                                            if (!f) return;
+                                            // Предзаполняем текстом (установлено во вьюхе), а также создаем hidden c текущим пользователем
+                                            const formEl = f.closest('form');
+                                            if (formEl && !formEl.querySelector('input[name="assigned_to_id"]')) {
+                                                let hidden = document.createElement('input');
+                                                hidden.type = 'hidden';
+                                                hidden.name = 'assigned_to_id';
+                                                hidden.value = '{{ user.id }}';
+                                                formEl.appendChild(hidden);
+                                            }
                                         });
                                     </script>
                                 {% endif %}
@@ -206,16 +225,13 @@
                 <h6 class="m-0 font-weight-bold text-primary">Информация о SLA</h6>
             </div>
             <div class="card-body">
-                <p class="text-muted">
-                    Контрольные сроки обработки обращений зависят от выбранной категории:
-                </p>
+                <p class="text-muted">Контрольные сроки обработки (примерные):</p>
                 <ul class="list-unstyled">
-                    <li><i class="bi bi-clock text-primary"></i> Изменение цен: 1 час</li>
-                    <li><i class="bi bi-clock text-primary"></i> Качество товара: 1 час</li>
-                    <li><i class="bi bi-clock text-primary"></i> Корректировка данных: 2 часа</li>
-                    <li><i class="bi bi-clock text-primary"></i> Поставки: 2 часа</li>
-                    <li><i class="bi bi-clock text-primary"></i> Карточки продуктов: 4 часа</li>
-                    <li><i class="bi bi-clock text-primary"></i> Документооборот: 8-48 часов</li>
+                    {% for c in categories_for_sla %}
+                        <li><i class="bi bi-clock text-primary"></i> {{ c.name }}: {{ c.sla_hours }} ч</li>
+                    {% empty %}
+                        <li class="text-muted">Категории не найдены</li>
+                    {% endfor %}
                 </ul>
             </div>
         </div>
@@ -243,7 +259,6 @@
                         <li><span class="status-badge" style="background-color: #007bff;">В работе</span> - Взят в работу</li>
                         <li><span class="status-badge" style="background-color: #ffc107;">Ожидает ответа</span> - Ждет ответа клиента</li>
                         <li><span class="status-badge" style="background-color: #17a2b8;">Решено</span> - Проблема решена</li>
-                        <li><span class="status-badge" style="background-color: #6c757d;">Закрыто</span> - Обращение закрыто</li>
                     </ul>
                 </div>
             </div>

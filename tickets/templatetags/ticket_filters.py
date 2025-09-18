@@ -1,4 +1,5 @@
 from django import template
+from datetime import timedelta
 
 register = template.Library()
 
@@ -31,3 +32,18 @@ def strip(value):
     if value is None:
         return ''
     return str(value).strip()
+
+
+@register.filter
+def format_timedelta(value):
+    """Форматирует timedelta в человекочитаемый вид: "Хч Ym"""
+    if not value or not isinstance(value, timedelta):
+        return ''
+    total_seconds = int(value.total_seconds())
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    parts = []
+    if hours:
+        parts.append(f"{hours}ч")
+    parts.append(f"{minutes}м")
+    return ' '.join(parts)

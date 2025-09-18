@@ -14,6 +14,9 @@ urlpatterns = [
     path('tickets/<int:ticket_id>/edit/', views.ticket_edit, name='ticket_edit'),
     path('tickets/<int:ticket_id>/take/', views.take_ticket, name='take_ticket'),
     path('tickets/<int:ticket_id>/resolve/', views.resolve_ticket, name='resolve_ticket'),
+    path('tickets/<int:ticket_id>/waiting/', views.set_waiting, name='set_waiting'),
+    path('tickets/<int:ticket_id>/return_to_work/', views.return_to_work, name='return_to_work'),
+    path('tickets/<int:ticket_id>/close/', views.close_ticket, name='close_ticket'),
     
     # Вложения
     path('attachments/<int:attachment_id>/delete/', views.delete_attachment, name='delete_attachment'),

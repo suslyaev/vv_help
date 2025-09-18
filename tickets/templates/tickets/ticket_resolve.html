@@ -151,15 +151,33 @@
 
 {% block extra_js %}
 <script>
+// Подставляем значения обращения в шаблон
+const TEMPLATE_VARS = {
+    '#{ticket_id}': '{{ ticket.id }}',
+    '{category}': '{{ ticket.category.name|escapejs }}',
+    '{created_at}': '{{ ticket.created_at|date:"d.m.Y H:i" }}',
+    '{sla_hours}': '{{ ticket.category.sla_hours }}'
+};
+
+function applyTemplateVariables(text) {
+    if (!text) return '';
+    let out = text;
+    Object.entries(TEMPLATE_VARS).forEach(([key, val]) => {
+        // Заменяем все вхождения
+        const re = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        out = out.replace(re, val);
+    });
+    return out;
+}
+
 function useTemplate(templateId) {
     fetch(`/tickets/api/template/${templateId}/`)
         .then(response => response.json())
         .then(data => {
-            document.getElementById('resolution').value = data.content;
-            if (data.title) {
-                // Можно также обновить заголовок, если нужно
-                console.log('Template title:', data.title);
-            }
+            const content = applyTemplateVariables(data.content || '');
+            document.getElementById('resolution').value = content;
+            // Если захотим в будущем подставлять заголовок — аналогично можно применить:
+            // const title = applyTemplateVariables(data.title || '');
         })
         .catch(error => {
             console.error('Error loading template:', error);

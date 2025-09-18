@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group, Permission
+from django.contrib.contenttypes.models import ContentType
 from tickets.models import Category, Client, TicketStatus, TicketTemplate
 
 
@@ -15,7 +16,6 @@ class Command(BaseCommand):
             {'name': 'В работе', 'color': '#007bff', 'is_working': True, 'is_final': False, 'order': 2},
             {'name': 'Ожидает ответа', 'color': '#ffc107', 'is_working': True, 'is_final': False, 'order': 3},
             {'name': 'Решено', 'color': '#17a2b8', 'is_working': False, 'is_final': True, 'order': 4},
-            {'name': 'Закрыто', 'color': '#6c757d', 'is_working': False, 'is_final': True, 'order': 5},
         ]
         
         for status_data in statuses_data:
@@ -150,6 +150,44 @@ class Command(BaseCommand):
                         self.stdout.write(f'Создан шаблон: {template.name}')
                 except Category.DoesNotExist:
                     self.stdout.write(f'Категория "{template_data["category"]}" не найдена')
+        
+        # Группа прав "Исполнитель"
+        performer_group, created = Group.objects.get_or_create(name='Исполнитель')
+        if created:
+            self.stdout.write('Создана группа: Исполнитель')
+
+        # Сбрасываем и назначаем точный набор прав согласно БД
+        performer_group.permissions.clear()
+
+        # Точный список прав согласно текущей БД (как в админке):
+        wanted = [
+            # Пользователи
+            'view_user',
+            # Категории
+            'add_category', 'change_category', 'delete_category', 'view_category',
+            # Клиенты (без delete)
+            'add_client', 'change_client', 'view_client',
+            # Обращения (без delete)
+            'add_ticket', 'change_ticket', 'view_ticket',
+            # Вложения (все)
+            'add_ticketattachment', 'change_ticketattachment', 'delete_ticketattachment', 'view_ticketattachment',
+            # Аудит (только просмотр)
+            'view_ticketaudit',
+            # Комментарии (все)
+            'add_ticketcomment', 'change_ticketcomment', 'delete_ticketcomment', 'view_ticketcomment',
+            # Статусы (только просмотр)
+            'view_ticketstatus',
+            # Шаблоны решений (все)
+            'add_tickettemplate', 'change_tickettemplate', 'delete_tickettemplate', 'view_tickettemplate',
+        ]
+        added = 0
+        for code in wanted:
+            perm = Permission.objects.filter(codename=code).first()
+            if perm:
+                performer_group.permissions.add(perm)
+                added += 1
+        performer_group.save()
+        self.stdout.write(f'Группе "Исполнитель" назначено прав: {added}')
         
         self.stdout.write(
             self.style.SUCCESS('Начальные данные успешно созданы!')
