@@ -132,24 +132,36 @@ class Command(BaseCommand):
             }
         ]
         
+        # Гарантируем наличие пользователя для поля created_by у шаблонов
         admin_user = User.objects.filter(is_superuser=True).first()
-        if admin_user:
-            for template_data in templates_data:
-                try:
-                    category = Category.objects.get(name=template_data['category'])
-                    template, created = TicketTemplate.objects.get_or_create(
-                        name=template_data['name'],
-                        category=category,
-                        defaults={
-                            'title_template': template_data['title_template'],
-                            'content_template': template_data['content_template'],
-                            'created_by': admin_user
-                        }
-                    )
-                    if created:
-                        self.stdout.write(f'Создан шаблон: {template.name}')
-                except Category.DoesNotExist:
-                    self.stdout.write(f'Категория "{template_data["category"]}" не найдена')
+        if not admin_user:
+            admin_user = User.objects.filter(is_staff=True).first() or User.objects.first()
+        if not admin_user:
+            # Создаем технического пользователя, если в системе нет пользователей
+            admin_user = User.objects.create_user(
+                username='system',
+                password=User.objects.make_random_password(),
+                is_superuser=True,
+                is_staff=True
+            )
+            self.stdout.write('Создан технический пользователь: system')
+
+        for template_data in templates_data:
+            try:
+                category = Category.objects.get(name=template_data['category'])
+                template, created = TicketTemplate.objects.get_or_create(
+                    name=template_data['name'],
+                    category=category,
+                    defaults={
+                        'title_template': template_data['title_template'],
+                        'content_template': template_data['content_template'],
+                        'created_by': admin_user
+                    }
+                )
+                if created:
+                    self.stdout.write(f'Создан шаблон: {template.name}')
+            except Category.DoesNotExist:
+                self.stdout.write(f'Категория "{template_data["category"]}" не найдена')
         
         # Группа прав "Исполнитель"
         performer_group, created = Group.objects.get_or_create(name='Исполнитель')
