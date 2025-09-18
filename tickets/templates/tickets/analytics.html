@@ -59,6 +59,9 @@
                 <div class="ratio ratio-16x9">
                     <canvas id="ticketsByDay" class="w-100 h-100"></canvas>
                 </div>
+                <div class="small text-muted mt-2">
+                    Всего: {{ analytics_summary.total_count }} • Дней: {{ analytics_summary.day_count }} • В среднем в день: {{ analytics_summary.avg_per_day }}
+                </div>
             </div>
             <div class="col-md-4">
                 <h6 class="text-primary">ТОП-20 тегов</h6>

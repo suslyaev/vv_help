@@ -803,6 +803,11 @@ def analytics(request):
         {'tag': k, 'count': v} for k, v in top_tags
     ])
 
+    # Краткая сводка для подписи под графиком
+    total_count = tickets_qs.count()
+    day_count = len(by_day_list)
+    avg_per_day = round(total_count / day_count, 1) if day_count else 0
+
     # Пагинация списка
     paginator = Paginator(tickets_qs.order_by('-created_at'), 25)
     page_number = request.GET.get('page')
@@ -839,6 +844,11 @@ def analytics(request):
         },
         'chart_by_day_json': chart_by_day_json,
         'chart_tags_json': chart_tags_json,
+        'analytics_summary': {
+            'total_count': total_count,
+            'day_count': day_count,
+            'avg_per_day': avg_per_day,
+        },
     }
 
     return render(request, 'tickets/analytics.html', context)
