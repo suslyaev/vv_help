@@ -29,6 +29,7 @@ urlpatterns = [
     
     # Аналитика
     path('analytics/', views.analytics, name='analytics'),
+    path('analytics/export/', views.analytics_export_xlsx, name='analytics_export_xlsx'),
     
     # Очередь дел
     path('queue/', views.queue_view, name='queue'),

@@ -7,6 +7,7 @@ from django.db.models import Q, Count
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 from django.core.paginator import Paginator
+from django.http import HttpResponse
 from .models import Ticket, Category, Client, Organization, TicketStatus, TicketComment, TicketTemplate, TicketAudit, TicketAttachment
 from .forms import TicketForm, TicketCommentForm, ClientForm, TicketAttachmentForm
 
@@ -913,3 +914,71 @@ def analytics(request):
     }
 
     return render(request, 'tickets/analytics.html', context)
+
+
+@login_required
+def analytics_export_xlsx(request):
+    """Экспорт выборки аналитики в XLSX по текущим фильтрам."""
+    # Повторяем фильтрацию как в analytics
+    def first_non_empty(param_name):
+        values = request.GET.getlist(param_name)
+        for v in values:
+            if v not in (None, '', 'None', 'null', 'NULL'):
+                return v
+        return None
+
+    category_id = first_non_empty('category_id')
+    category_text = first_non_empty('category')
+    client_id = first_non_empty('client_id') or first_non_empty('client')
+    assigned_to_id = first_non_empty('assigned_to_id') or first_non_empty('assigned_to')
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+
+    qs = Ticket.objects.select_related('category', 'client', 'client__organization', 'status', 'assigned_to')
+    if category_id and str(category_id).isdigit():
+        cid = int(category_id)
+        qs = qs.filter(Q(category_id=cid) | Q(category__parent_id=cid))
+    elif category_text:
+        qs = qs.filter(Q(category__name__icontains=category_text) | Q(category__parent__name__icontains=category_text))
+    if client_id and str(client_id).isdigit():
+        qs = qs.filter(client_id=int(client_id))
+    if assigned_to_id and str(assigned_to_id).isdigit():
+        qs = qs.filter(assigned_to_id=int(assigned_to_id))
+    if date_from:
+        qs = qs.filter(created_at__date__gte=date_from)
+    if date_to:
+        qs = qs.filter(created_at__date__lte=date_to)
+
+    # Формируем XLSX
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Обращения'
+    headers = ['ID', 'Заголовок', 'Клиент', 'Организация', 'Категория', 'Статус', 'Исполнитель', 'Создано']
+    ws.append(headers)
+    for t in qs.order_by('-created_at'):
+        ws.append([
+            t.id,
+            t.title,
+            t.client.name if t.client else '',
+            t.client.organization.name if t.client and t.client.organization else '',
+            t.category.name if t.category else '',
+            t.status.name if t.status else '',
+            (t.assigned_to.get_full_name() or t.assigned_to.username) if t.assigned_to else '',
+            t.created_at.strftime('%d.%m.%Y %H:%M'),
+        ])
+
+    # Автоширина
+    for col in ws.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            max_len = max(max_len, len(str(cell.value)) if cell.value else 0)
+        ws.column_dimensions[col_letter].width = min(max(10, max_len + 2), 60)
+
+    resp = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = 'attachment; filename="analytics_export.xlsx"'
+    wb.save(resp)
+    return resp
