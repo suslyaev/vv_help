@@ -523,7 +523,7 @@ def return_to_work(request, ticket_id):
 @login_required
 def client_list(request):
     """Список клиентов"""
-    clients = Client.objects.annotate(
+    clients = Client.objects.filter(is_active=True).annotate(
         ticket_count=Count('ticket')
     ).order_by('name')
     
