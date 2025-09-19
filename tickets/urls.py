@@ -30,6 +30,8 @@ urlpatterns = [
     # Аналитика
     path('analytics/', views.analytics, name='analytics'),
     path('analytics/export/', views.analytics_export_xlsx, name='analytics_export_xlsx'),
+    # Поток Telegram
+    path('stream/', views.stream, name='stream'),
     
     # Очередь дел
     path('queue/', views.queue_view, name='queue'),

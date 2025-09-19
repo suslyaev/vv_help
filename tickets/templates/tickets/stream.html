@@ -1,0 +1,228 @@
+{% extends 'tickets/base.html' %}
+{% load static %}
+{% load ticket_filters %}
+
+{% block title %}Поток Telegram - Система поддержки ВкусВилл{% endblock %}
+{% block page_title %}Поток Telegram{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <form class="d-flex" method="get">
+      <input type="text" class="form-control me-2" name="q" value="{{ filters.q }}" placeholder="Поиск по тексту или пользователю">
+      <input type="text" class="form-control me-2" name="chat" value="{{ filters.chat }}" placeholder="ID чата">
+      <button class="btn btn-primary" type="submit">Искать</button>
+    </form>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div>
+        <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#bulkCommentModal">Массовый комментарий</button>
+        <button name="action" value="bulk_delete" class="btn btn-outline-danger btn-sm">Удалить выбранные</button>
+      </div>
+      <div class="d-flex align-items-center">
+        <input type="date" class="form-control form-control-sm me-2" name="date_from">
+        <input type="date" class="form-control form-control-sm me-2" name="date_to">
+        <button name="action" value="cleanup_period" class="btn btn-outline-secondary btn-sm">Очистить период</button>
+      </div>
+    </div>
+
+    <div class="list-group">
+      {% for m in page_obj %}
+        <div class="list-group-item py-2">
+          <div class="d-flex justify-content-between align-items-start">
+            <div class="me-3" style="flex:1;">
+              <div class="small text-muted mb-1">
+                <input type="checkbox" name="selected" value="{{ m.id }}" class="form-check-input me-2">
+                {{ m.message_date|date:"d.m.Y H:i" }} · Чат: {{ m.chat_title|default:m.chat_id }} · {{ m.media_type|upper }}
+              </div>
+              <div class="fw-semibold">
+                {{ m.from_username|default:m.from_fullname|default:m.from_user_id }}
+                {% with cid=m.from_user_id %}
+                  {% with u=uta_map|dict_get:cid %}
+                    {% if u %}
+                      <span class="badge bg-primary ms-1">{{ u.get_full_name|default:u.username }}</span>
+                    {% else %}
+                      {% with cl=clients_map|dict_get:cid %}
+                        {% if cl %}
+                          <span class="badge bg-info text-dark ms-1">{{ cl.name }}</span>
+                        {% endif %}
+                      {% endwith %}
+                    {% endif %}
+                  {% endwith %}
+                {% endwith %}
+              </div>
+              <div class="small" style="white-space: pre-wrap; line-height: 1.2;">{{ m.text }}</div>
+            </div>
+            <div class="text-end" style="min-width: 260px;">
+              {% if m.linked_ticket %}
+                <div class="mb-2">
+                  {% if m.linked_action == 'create_ticket' %}
+                    <span class="badge bg-success me-1">Создано</span>
+                  {% elif m.linked_action == 'add_comment' %}
+                    <span class="badge bg-info me-1">Комментарий</span>
+                  {% elif m.linked_action == 'resolve_ticket' %}
+                    <span class="badge bg-primary me-1">Решено</span>
+                  {% endif %}
+                  <a class="btn btn-outline-secondary btn-sm" href="{% url 'tickets:ticket_detail' m.linked_ticket.id %}" target="_blank">Открыть #{{ m.linked_ticket.id }}</a>
+                </div>
+              {% else %}
+                <form method="post" class="mb-2 d-inline-block">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="create_ticket">
+                  <input type="hidden" name="message_id" value="{{ m.id }}">
+                  <button class="btn btn-success btn-sm" type="submit">Новое обращение</button>
+                </form>
+                <button type="button" class="btn btn-outline-primary btn-sm mb-2" data-bs-toggle="modal" data-bs-target="#commentModal" data-message-id="{{ m.id }}">Комментарий</button>
+                <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#resolveModal" data-message-id="{{ m.id }}">Решение</button>
+              {% endif %}
+              <div class="small text-muted">msg_id: {{ m.message_id }}</div>
+            </div>
+          </div>
+        </div>
+      {% empty %}
+        <div class="alert alert-info">Сообщений нет.</div>
+      {% endfor %}
+    </div>
+  </form>
+
+  <!-- Modals -->
+  <div class="modal fade" id="commentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="add_comment">
+          <input type="hidden" name="message_id" id="commentMessageId">
+          <div class="modal-header">
+            <h5 class="modal-title">Добавить комментарий</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <input type="text" class="form-control form-control-sm mb-2" name="ticket_id" placeholder="ID тикета">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_internal" id="commentInternal">
+              <label class="form-check-label" for="commentInternal">Внутренний</label>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+            <button type="submit" class="btn btn-primary">Добавить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="resolveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="resolve_ticket">
+          <input type="hidden" name="message_id" id="resolveMessageId">
+          <div class="modal-header">
+            <h5 class="modal-title">Решить обращение</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <input type="text" class="form-control form-control-sm mb-2" name="ticket_id" placeholder="ID тикета">
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+            <button type="submit" class="btn btn-success">Решить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="bulkCommentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form method="post" id="bulkCommentForm">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="bulk_comment">
+          <div class="modal-header">
+            <h5 class="modal-title">Массовый комментарий</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-info py-2">Будут добавлены комментарии для всех выбранных сообщений.</div>
+            <input type="text" class="form-control form-control-sm mb-2" name="ticket_id" placeholder="ID тикета">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_internal" id="bulkInternal">
+              <label class="form-check-label" for="bulkInternal">Внутренний</label>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+            <button type="submit" class="btn btn-primary">Добавить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {% if page_obj.paginator.num_pages > 1 %}
+  <nav class="mt-3">
+    <ul class="pagination">
+      {% if page_obj.has_previous %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&q={{ filters.q }}&chat={{ filters.chat }}">Назад</a></li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">Назад</span></li>
+      {% endif %}
+      <li class="page-item disabled"><span class="page-link">Стр. {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}</span></li>
+      {% if page_obj.has_next %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&q={{ filters.q }}&chat={{ filters.chat }}">Вперёд</a></li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">Вперёд</span></li>
+      {% endif %}
+    </ul>
+  </nav>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var commentModal = document.getElementById('commentModal');
+  if (commentModal) {
+    commentModal.addEventListener('show.bs.modal', function (event) {
+      var button = event.relatedTarget;
+      var messageId = button.getAttribute('data-message-id');
+      document.getElementById('commentMessageId').value = messageId;
+    });
+  }
+  var resolveModal = document.getElementById('resolveModal');
+  if (resolveModal) {
+    resolveModal.addEventListener('show.bs.modal', function (event) {
+      var button = event.relatedTarget;
+      var messageId = button.getAttribute('data-message-id');
+      document.getElementById('resolveMessageId').value = messageId;
+    });
+  }
+  var bulkForm = document.getElementById('bulkCommentForm');
+  if (bulkForm) {
+    bulkForm.addEventListener('submit', function() {
+      // Добавляем скрытые inputs selected в форму модалки из чекбоксов списка
+      var container = bulkForm;
+      // Удаляем старые
+      container.querySelectorAll('input[name="selected"]').forEach(function(n){ n.remove(); });
+      document.querySelectorAll('input[type="checkbox"][name="selected"]:checked').forEach(function(cb){
+        var h = document.createElement('input');
+        h.type = 'hidden';
+        h.name = 'selected';
+        h.value = cb.value;
+        container.appendChild(h);
+      });
+    });
+  }
+});
+</script>
+{% endblock %}
+
+

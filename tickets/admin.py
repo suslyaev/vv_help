@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.db.models import Count, Q
 from .models import (
     Category, Client, Organization, TicketStatus, Ticket, TicketAudit, 
-    TicketComment, TicketAttachment, TicketTemplate, UserProfile
+    TicketComment, TicketAttachment, TicketTemplate, UserTelegramAccess, TelegramMessage
 )
 
 
@@ -326,21 +326,25 @@ class TicketTemplateAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
 
 
-@admin.register(UserProfile)
-class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ['user', 'telegram_user_id', 'can_use_telegram_bot']
-    search_fields = ['user__username', 'user__email', 'telegram_user_id']
-    list_filter = ['can_use_telegram_bot']
+@admin.register(UserTelegramAccess)
+class UserTelegramAccessAdmin(admin.ModelAdmin):
+    list_display = ['user', 'telegram_user_id', 'is_allowed', 'comment']
+    list_filter = ['is_allowed']
+    search_fields = ['user__username', 'user__email', 'telegram_user_id', 'comment']
     autocomplete_fields = ['user']
-    fieldsets = (
-        ('Пользователь', {
-            'fields': ('user',)
-        }),
-        ('Telegram', {
-            'fields': ('telegram_user_id', 'can_use_telegram_bot')
-        }),
-    )
 
+
+@admin.register(TelegramMessage)
+class TelegramMessageAdmin(admin.ModelAdmin):
+    list_display = ['message_date', 'chat_title', 'from_username', 'from_user_id', 'media_type', 'text_short', 'linked_ticket']
+    list_filter = ['media_type', 'chat_title']
+    search_fields = ['text', 'from_username', 'from_user_id', 'chat_title', 'chat_id']
+    readonly_fields = ['message_id', 'chat_id', 'chat_title', 'from_user_id', 'from_username', 'from_fullname', 'text', 'media_type', 'message_date', 'created_at', 'linked_ticket', 'linked_action', 'processed_at']
+    ordering = ['-message_date']
+
+    def text_short(self, obj):
+        return obj.text[:80] + '...' if len(obj.text) > 80 else obj.text
+    text_short.short_description = 'Текст'
 
 # Кастомные действия для админки
 @admin.action(description='Взять в работу')

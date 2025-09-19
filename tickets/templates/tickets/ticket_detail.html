@@ -356,8 +356,16 @@
                 
                 {% if ticket.external_message_id %}
                 <div class="mb-3">
-                    <strong>ID сообщения:</strong><br>
-                    <small class="text-muted">{{ ticket.external_message_id }}</small>
+                    <strong>Источник Telegram:</strong><br>
+                    <small class="text-muted">
+                        {% if ticket.telegram_chat_title %}
+                            Группа: {{ ticket.telegram_chat_title }}<br>
+                        {% endif %}
+                        {% if ticket.telegram_chat_id %}
+                            ID чата: {{ ticket.telegram_chat_id }}<br>
+                        {% endif %}
+                        ID сообщения: {{ ticket.external_message_id }}
+                    </small>
                 </div>
                 {% endif %}
                 

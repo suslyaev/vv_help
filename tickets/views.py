@@ -8,7 +8,9 @@ from django.db.models.functions import TruncDate
 from django.utils import timezone
 from django.core.paginator import Paginator
 from django.http import HttpResponse
-from .models import Ticket, Category, Client, Organization, TicketStatus, TicketComment, TicketTemplate, TicketAudit, TicketAttachment
+from django.urls import reverse
+from django.utils.safestring import mark_safe
+from .models import Ticket, Category, Client, Organization, TicketStatus, TicketComment, TicketTemplate, TicketAudit, TicketAttachment, TelegramMessage
 from .forms import TicketForm, TicketCommentForm, ClientForm, TicketAttachmentForm
 
 
@@ -426,6 +428,7 @@ def resolve_ticket(request, ticket_id):
     if request.method == 'POST':
         resolution = request.POST.get('resolution', '')
         resolution_notes = request.POST.get('resolution_notes', '')
+        reply_in_chat = request.POST.get('reply_in_chat') == '1'
         
         # Находим статус "Решено"
         resolved_status = TicketStatus.objects.filter(name='Решено').first()
@@ -437,15 +440,60 @@ def resolve_ticket(request, ticket_id):
         ticket.resolution = resolution
         ticket.resolution_notes = resolution_notes
         ticket.resolved_at = timezone.now()
+        
+        # Если taken_at пустое, устанавливаем на 1 секунду раньше resolved_at
+        if not ticket.taken_at:
+            ticket.taken_at = ticket.resolved_at - timezone.timedelta(seconds=1)
+        
         ticket.save()
         
         # Создаем запись аудита
+        audit_comment = f'Решено: {resolution[:50]}...' if resolution else 'Решено'
+        if reply_in_chat and ticket.telegram_chat_id and ticket.external_message_id:
+            audit_comment += ' (ответ отправлен в Telegram)'
+        
         TicketAudit.objects.create(
             ticket=ticket,
             action='resolved',
             user=request.user,
-            comment=f'Решено: {resolution[:50]}...' if resolution else 'Решено'
+            comment=audit_comment
         )
+        
+        # Отправляем ответ в Telegram, если запрошено
+        if reply_in_chat and ticket.telegram_chat_id and ticket.external_message_id:
+            try:
+                import logging
+                import asyncio
+                from telegram.ext import Application
+                from django.conf import settings
+                
+                logger = logging.getLogger(__name__)
+                logger.info(f"Attempting to send Telegram reply: chat_id={ticket.telegram_chat_id}, message_id={ticket.external_message_id}")
+                
+                bot_token = getattr(settings, 'TELEGRAM_BOT_TOKEN', None)
+                if bot_token:
+                    # Создаем асинхронную функцию для отправки
+                    async def send_telegram_message():
+                        application = Application.builder().token(bot_token).build()
+                        result = await application.bot.send_message(
+                            chat_id=ticket.telegram_chat_id,
+                            text=resolution,
+                            reply_to_message_id=int(ticket.external_message_id)
+                        )
+                        return result
+                    
+                    # Запускаем асинхронную функцию
+                    result = asyncio.run(send_telegram_message())
+                    logger.info(f"Telegram message sent successfully: {result.message_id}")
+                    messages.success(request, 'Ответ отправлен в Telegram')
+                else:
+                    logger.error("TELEGRAM_BOT_TOKEN not configured")
+                    messages.warning(request, 'Telegram бот не настроен')
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to send Telegram reply: {e}", exc_info=True)
+                messages.warning(request, f'Не удалось отправить ответ в Telegram: {str(e)}')
         
         messages.success(request, f'Обращение #{ticket.id} решено')
         return redirect('tickets:ticket_detail', ticket_id=ticket.id)
@@ -481,6 +529,11 @@ def close_ticket(request, ticket_id):
     ticket.status = resolved_status
     if not ticket.resolved_at:
         ticket.resolved_at = timezone.now()
+    
+    # Если taken_at пустое, устанавливаем на 1 секунду раньше resolved_at
+    if not ticket.taken_at:
+        ticket.taken_at = ticket.resolved_at - timezone.timedelta(seconds=1)
+    
     ticket.save()
     
     # Аудит
@@ -1025,3 +1078,243 @@ def analytics_export_xlsx(request):
     resp['Content-Disposition'] = 'attachment; filename="analytics_export.xlsx"'
     wb.save(resp)
     return resp
+
+
+@login_required
+def stream(request):
+    """Поток сообщений Telegram"""
+    qs = TelegramMessage.objects.select_related('linked_ticket').order_by('-message_date', '-id')
+
+    # Фильтры
+    chat = request.GET.get('chat')
+    q = request.GET.get('q')
+    if chat:
+        qs = qs.filter(chat_id=chat)
+    if q:
+        qs = qs.filter(Q(text__icontains=q) | Q(from_username__icontains=q) | Q(from_fullname__icontains=q))
+
+    # Действие: создать тикет из сообщения
+    if request.method == 'POST' and request.POST.get('action') == 'create_ticket':
+        msg_id = request.POST.get('message_id')
+        msg = get_object_or_404(TelegramMessage, id=msg_id)
+
+        # Поиск клиента по from_user_id
+        client = Client.objects.filter(external_id=msg.from_user_id).first()
+        if not client:
+            client = Client.objects.filter(name='Неизвестный клиент').first()
+            if not client:
+                client = Client.objects.create(name='Неизвестный клиент')
+
+        # Категория и статус по умолчанию
+        category = Category.objects.filter(name__icontains='Обращения от поставщиков', parent__isnull=True).first() or Category.objects.first()
+        status = TicketStatus.objects.filter(is_final=False).order_by('order').first() or TicketStatus.objects.first()
+
+        ticket = Ticket(
+            title='Создано из Telegram',
+            description=msg.text,
+            category=category,
+            client=client,
+            status=status,
+            priority='normal',
+            created_by=request.user,
+        )
+        ticket.external_message_id = msg.message_id
+        ticket.telegram_chat_id = msg.chat_id
+        ticket.telegram_chat_title = msg.chat_title
+        ticket.created_at = msg.message_date
+        ticket.save()
+
+        msg.linked_ticket = ticket
+        msg.linked_action = 'new'
+        msg.processed_at = timezone.now()
+        msg.save(update_fields=['linked_ticket', 'linked_action', 'processed_at'])
+
+        messages.success(request, mark_safe(f'Создано обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a>'))
+        return redirect('tickets:stream')
+
+    # Действие: решить обращение по сообщению
+    if request.method == 'POST' and request.POST.get('action') == 'resolve_ticket':
+        msg_id = request.POST.get('message_id')
+        ticket_id = request.POST.get('ticket_id')
+        msg = get_object_or_404(TelegramMessage, id=msg_id)
+        ticket = get_object_or_404(Ticket, id=ticket_id)
+
+        # Находим финальный/"Решено" статус
+        resolved_status = TicketStatus.objects.filter(name='Решено').first() or TicketStatus.objects.filter(is_final=True).first()
+        if not resolved_status:
+            messages.error(request, 'Статус "Решено" не найден')
+            return redirect('tickets:stream')
+
+        ticket.status = resolved_status
+        ticket.resolution = (msg.text or '')
+        ticket.resolved_at = msg.message_date
+        
+        # Если taken_at пустое, устанавливаем на 1 секунду раньше resolved_at
+        if not ticket.taken_at:
+            ticket.taken_at = ticket.resolved_at - timezone.timedelta(seconds=1)
+        
+        # Если исполнитель не назначен, назначаем автора сообщения или текущего пользователя
+        if not ticket.assigned_to:
+            from .models import UserTelegramAccess
+            uta = UserTelegramAccess.objects.select_related('user').filter(telegram_user_id=msg.from_user_id, is_allowed=True).first()
+            if uta:
+                ticket.assigned_to = uta.user
+            else:
+                ticket.assigned_to = request.user
+        
+        ticket.save()
+
+        TicketAudit.objects.create(
+            ticket=ticket,
+            action='resolved',
+            user=request.user,
+            comment=f'Решено из потока: {msg.text[:50]}...'
+        )
+
+        msg.linked_ticket = ticket
+        msg.linked_action = 'resolve'
+        msg.processed_at = timezone.now()
+        msg.save(update_fields=['linked_ticket', 'linked_action', 'processed_at'])
+
+        messages.success(request, mark_safe(f'Обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a> переведено в Решено'))
+        return redirect('tickets:stream')
+
+    # Действие: добавить комментарий в обращение по сообщению
+    if request.method == 'POST' and request.POST.get('action') == 'add_comment':
+        msg_id = request.POST.get('message_id')
+        ticket_id = request.POST.get('ticket_id')
+        is_internal = request.POST.get('is_internal') == 'on'
+        if not ticket_id or not ticket_id.isdigit():
+            messages.error(request, 'Укажите корректный ID тикета')
+            return redirect('tickets:stream')
+        msg = get_object_or_404(TelegramMessage, id=msg_id)
+        ticket = get_object_or_404(Ticket, id=int(ticket_id))
+
+        # Определяем автора
+        author_type = 'user'
+        author = None
+        author_client = None
+        # Если есть маппинг на пользователя системы
+        from .models import UserTelegramAccess  # локальный импорт во избежание циклов
+        uta = UserTelegramAccess.objects.select_related('user').filter(telegram_user_id=msg.from_user_id, is_allowed=True).first()
+        if uta:
+            author_type = 'user'
+            author = uta.user
+        else:
+            # Если есть клиент по external_id
+            cl = Client.objects.filter(external_id=msg.from_user_id).first()
+            if cl:
+                author_type = 'client'
+                author_client = cl
+            else:
+                # Иначе "Неизвестный клиент"
+                author_type = 'client'
+                author_client = Client.objects.filter(name='Неизвестный клиент').first()
+                if not author_client:
+                    author_client = Client.objects.create(name='Неизвестный клиент')
+
+        comment = TicketComment(
+            ticket=ticket,
+            content=msg.text or '',
+            is_internal=is_internal,
+            created_at=msg.message_date,
+            author_type=author_type,
+            author=author,
+            author_client=author_client,
+        )
+        comment.save()
+
+        TicketAudit.objects.create(
+            ticket=ticket,
+            action='comment_added',
+            user=request.user,
+            comment=f'Комментарий из потока: {comment.content[:50]}...'
+        )
+
+        messages.success(request, mark_safe(f'Комментарий добавлен в обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a>'))
+        return redirect('tickets:stream')
+
+    # Массовый комментарий по выбранным сообщениям
+    if request.method == 'POST' and request.POST.get('action') == 'bulk_comment':
+        ticket_id = request.POST.get('ticket_id')
+        is_internal = request.POST.get('is_internal') == 'on'
+        ids = request.POST.getlist('selected')
+        if not ticket_id or not ticket_id.isdigit():
+            messages.error(request, 'Укажите корректный ID тикета для массового комментария')
+            return redirect('tickets:stream')
+        ticket = get_object_or_404(Ticket, id=int(ticket_id))
+        msgs = TelegramMessage.objects.filter(id__in=ids).order_by('message_date')
+        created = 0
+        for msg in msgs:
+            author_type = 'user'
+            author = None
+            author_client = None
+            from .models import UserTelegramAccess
+            uta = UserTelegramAccess.objects.select_related('user').filter(telegram_user_id=msg.from_user_id, is_allowed=True).first()
+            if uta:
+                author_type = 'user'
+                author = uta.user
+            else:
+                cl = Client.objects.filter(external_id=msg.from_user_id).first()
+                if cl:
+                    author_type = 'client'
+                    author_client = cl
+                else:
+                    author_type = 'client'
+                    author_client = Client.objects.filter(name='Неизвестный клиент').first()
+                    if not author_client:
+                        author_client = Client.objects.create(name='Неизвестный клиент')
+
+            TicketComment.objects.create(
+                ticket=ticket,
+                content=msg.text or '',
+                is_internal=is_internal,
+                created_at=msg.message_date,
+                author_type=author_type,
+                author=author,
+                author_client=author_client,
+            )
+            created += 1
+        messages.success(request, mark_safe(f'Добавлено комментариев: {created} в обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a>'))
+        return redirect('tickets:stream')
+
+    # Массовое удаление выбранных сообщений
+    if request.method == 'POST' and request.POST.get('action') == 'bulk_delete':
+        ids = request.POST.getlist('selected')
+        deleted, _ = TelegramMessage.objects.filter(id__in=ids).delete()
+        messages.success(request, f'Удалено записей: {deleted}')
+        return redirect('tickets:stream')
+
+    # Очистка за период
+    if request.method == 'POST' and request.POST.get('action') == 'cleanup_period':
+        date_from = request.POST.get('date_from')
+        date_to = request.POST.get('date_to')
+        if not date_from or not date_to:
+            messages.error(request, 'Укажите период для очистки')
+            return redirect('tickets:stream')
+        cnt, _ = TelegramMessage.objects.filter(message_date__date__gte=date_from, message_date__date__lte=date_to).delete()
+        messages.success(request, f'Удалено записей из потока: {cnt}')
+        return redirect('tickets:stream')
+
+    paginator = Paginator(qs, 25)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    # Маппинг для отображения на странице (только текущая страница)
+    from_ids = {m.from_user_id for m in page_obj.object_list if m.from_user_id}
+    clients_map = {c.external_id: c for c in Client.objects.filter(external_id__in=from_ids)}
+    from .models import UserTelegramAccess
+    uta_map = {}
+    for access in UserTelegramAccess.objects.select_related('user').filter(telegram_user_id__in=from_ids, is_allowed=True):
+        uta_map[access.telegram_user_id] = access.user
+
+    context = {
+        'page_obj': page_obj,
+        'filters': {
+            'chat': chat or '',
+            'q': q or '',
+        },
+        'clients_map': clients_map,
+        'uta_map': uta_map,
+    }
+    return render(request, 'tickets/stream.html', context)

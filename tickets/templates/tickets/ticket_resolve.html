@@ -24,6 +24,18 @@
                     <p class="mb-2"><strong>Заголовок:</strong> {{ ticket.title }}</p>
                     <p class="mb-2"><strong>Клиент:</strong> {{ ticket.client.name }}</p>
                     <p class="mb-2"><strong>Категория:</strong> {{ ticket.category.name }}</p>
+                    {% if ticket.telegram_chat_title or ticket.external_message_id %}
+                    <p class="mb-2"><strong>Источник:</strong> 
+                        {% if ticket.telegram_chat_title %}
+                            Telegram группа "{{ ticket.telegram_chat_title }}"
+                            {% if ticket.external_message_id %}
+                                (сообщение #{{ ticket.external_message_id }})
+                            {% endif %}
+                        {% elif ticket.external_message_id %}
+                            Telegram (сообщение #{{ ticket.external_message_id }})
+                        {% endif %}
+                    </p>
+                    {% endif %}
                     <p class="mb-0"><strong>Описание:</strong> {{ ticket.description|truncatechars:200 }}</p>
                 </div>
 
@@ -65,6 +77,20 @@
                         <textarea class="form-control" id="resolution_notes" name="resolution_notes" rows="3" 
                                   placeholder="Дополнительные заметки (не видны клиенту)..."></textarea>
                     </div>
+                    
+                    {% if ticket.telegram_chat_id and ticket.external_message_id %}
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="reply_in_chat" id="reply_in_chat" value="1">
+                            <label class="form-check-label" for="reply_in_chat">
+                                <i class="bi bi-telegram"></i> Ответить в чате Telegram
+                            </label>
+                            <small class="form-text text-muted d-block">
+                                Бот отправит решение как ответ на сообщение #{{ ticket.external_message_id }} в группе "{{ ticket.telegram_chat_title }}"
+                            </small>
+                        </div>
+                    </div>
+                    {% endif %}
                     
                     <div class="d-flex justify-content-between">
                         <button type="submit" class="btn btn-success">

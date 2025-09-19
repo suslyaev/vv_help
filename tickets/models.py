@@ -121,6 +121,8 @@ class Ticket(models.Model):
     
     # Дополнительная информация
     external_message_id = models.CharField('ID сообщения', max_length=100, blank=True, help_text='ID сообщения в чате')
+    telegram_chat_id = models.CharField('ID чата Telegram', max_length=100, blank=True, help_text='ID чата в Telegram')
+    telegram_chat_title = models.CharField('Название чата Telegram', max_length=255, blank=True, help_text='Название чата в Telegram')
     tags = models.CharField('Теги', max_length=500, blank=True, help_text='Через запятую')
     
     # Системные поля
@@ -289,15 +291,63 @@ class TicketTemplate(models.Model):
         return f"{self.name} ({self.category})"
 
 
-class UserProfile(models.Model):
-    """Профиль пользователя для интеграций (Telegram и т.п.)"""
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile', verbose_name='Пользователь')
-    telegram_user_id = models.CharField('Telegram user id', max_length=32, blank=True, help_text='ID пользователя Telegram')
-    can_use_telegram_bot = models.BooleanField('Доступ к Telegram-боту', default=False)
+## Удалено: UserProfile (заменено на UserTelegramAccess)
+
+
+class UserTelegramAccess(models.Model):
+    """Допуски Telegram: несколько аккаунтов Telegram на одного пользователя"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='telegram_accesses', verbose_name='Пользователь')
+    telegram_user_id = models.CharField('Telegram user id', max_length=32, unique=True)
+    comment = models.CharField('Комментарий', max_length=255, blank=True)
+    is_allowed = models.BooleanField('Разрешен доступ к боту', default=True)
 
     class Meta:
-        verbose_name = 'Профиль пользователя'
-        verbose_name_plural = 'Профили пользователей'
+        verbose_name = 'Доступ Telegram'
+        verbose_name_plural = 'Доступы Telegram'
+        ordering = ['user__username', 'telegram_user_id']
 
     def __str__(self):
-        return f"Профиль {self.user.username}"
+        return f"{self.user.username} — {self.telegram_user_id}"
+
+
+class TelegramMessage(models.Model):
+    """Поток сообщений из Telegram-групп/чатов"""
+    MEDIA_TEXT_CHOICES = [
+        ('text', 'Текст'),
+        ('photo', 'Фото'),
+        ('video', 'Видео'),
+        ('document', 'Файл'),
+        ('audio', 'Аудио'),
+        ('voice', 'Голосовое'),
+        ('sticker', 'Стикер'),
+        ('other', 'Другое'),
+    ]
+
+    message_id = models.CharField('ID сообщения', max_length=64)
+    chat_id = models.CharField('ID чата', max_length=64)
+    chat_title = models.CharField('Название чата', max_length=255, blank=True)
+    from_user_id = models.CharField('ID отправителя', max_length=64, blank=True)
+    from_username = models.CharField('Username отправителя', max_length=64, blank=True)
+    from_fullname = models.CharField('Имя отправителя', max_length=255, blank=True)
+    text = models.TextField('Текст сообщения')
+    media_type = models.CharField('Тип', max_length=16, choices=MEDIA_TEXT_CHOICES, default='text')
+    message_date = models.DateTimeField('Время сообщения')
+    created_at = models.DateTimeField('Загружено', auto_now_add=True)
+
+    # Результат обработки
+    linked_ticket = models.ForeignKey('Ticket', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Связанный тикет')
+    linked_action = models.CharField('Действие', max_length=16, blank=True, help_text='new/resolve/comment')
+    processed_at = models.DateTimeField('Обработано', null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Сообщение Telegram'
+        verbose_name_plural = 'Поток Telegram'
+        ordering = ['-message_date', '-id']
+        indexes = [
+            models.Index(fields=['chat_id', 'message_id']),
+            models.Index(fields=['from_user_id']),
+            models.Index(fields=['message_date']),
+        ]
+
+    def __str__(self):
+        return f"[{self.chat_title or self.chat_id}] {self.from_username or self.from_fullname}: {self.text[:40]}"

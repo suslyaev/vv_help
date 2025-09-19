@@ -47,3 +47,11 @@ def format_timedelta(value):
         parts.append(f"{hours}ч")
     parts.append(f"{minutes}м")
     return ' '.join(parts)
+
+
+@register.filter
+def dict_get(d, key):
+    try:
+        return d.get(key)
+    except Exception:
+        return None
