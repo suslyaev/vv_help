@@ -65,7 +65,18 @@
                 </div>
             </div>
             <div class="col-md-4">
-                <h6 class="text-primary">ТОП-20 тегов</h6>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="text-primary mb-0" id="chartTitle">ТОП-20 тегов</h6>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <input type="radio" class="btn-check" name="chartType" id="chartTypeTags" value="tags" 
+                               {% if chart_type == 'tags' %}checked{% endif %}>
+                        <label class="btn btn-outline-primary" for="chartTypeTags">Теги</label>
+                        
+                        <input type="radio" class="btn-check" name="chartType" id="chartTypeOrgs" value="organizations" 
+                               {% if chart_type == 'organizations' %}checked{% endif %}>
+                        <label class="btn btn-outline-primary" for="chartTypeOrgs">Организации</label>
+                    </div>
+                </div>
                 <div class="ratio ratio-1x1">
                     <canvas id="tagsChart" class="w-100 h-100"></canvas>
                 </div>
@@ -182,20 +193,33 @@
             });
         }
 
-        // Диаграмма тегов
-        const tags = {{ chart_tags_json|safe }};
-        const tLabels = tags.map(t => t.tag);
-        const tData = tags.map(t => t.count);
-        const ctx2 = document.getElementById('tagsChart');
-        if (ctx2) {
-            new Chart(ctx2, {
+        // Диаграмма тегов/организаций
+        const chartData = {{ chart_data_json|safe }};
+        const currentChartType = '{{ chart_type }}';
+        let chart = null;
+        
+        function updateChart(type) {
+            const ctx2 = document.getElementById('tagsChart');
+            if (!ctx2) return;
+            
+            const labels = chartData.map(item => item.name);
+            const data = chartData.map(item => item.count);
+            const title = type === 'organizations' ? 'ТОП-20 организаций' : 'ТОП-20 тегов';
+            
+            document.getElementById('chartTitle').textContent = title;
+            
+            if (chart) {
+                chart.destroy();
+            }
+            
+            chart = new Chart(ctx2, {
                 type: 'doughnut',
                 data: {
-                    labels: tLabels,
+                    labels: labels,
                     datasets: [{
-                        label: 'Использование тегов',
-                        data: tData,
-                        backgroundColor: tLabels.map((_, i) => `hsl(${(i*37)%360}deg 70% 55%)`),
+                        label: type === 'organizations' ? 'Обращения по организациям' : 'Использование тегов',
+                        data: data,
+                        backgroundColor: labels.map((_, i) => `hsl(${(i*37)%360}deg 70% 55%)`),
                         borderWidth: 1
                     }]
                 },
@@ -232,6 +256,21 @@
                 }
             });
         }
+        
+        // Инициализация диаграммы
+        updateChart(currentChartType);
+        
+        // Обработчик переключения
+        document.querySelectorAll('input[name="chartType"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                if (this.checked) {
+                    // Перезагружаем страницу с новым типом диаграммы
+                    const url = new URL(window.location);
+                    url.searchParams.set('chart_type', this.value);
+                    window.location.href = url.toString();
+                }
+            });
+        });
     });
 </script>
 {% endblock %}

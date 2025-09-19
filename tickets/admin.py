@@ -144,7 +144,7 @@ class TicketAdmin(admin.ModelAdmin):
             'fields': ('status', 'assigned_to')
         }),
         ('Временные метки', {
-            'fields': ('created_at', 'taken_at', 'resolved_at', 'closed_at'),
+            'fields': ('created_at', 'taken_at', 'resolved_at'),
             'classes': ('collapse',)
         }),
         ('Решение', {
@@ -172,10 +172,13 @@ class TicketAdmin(admin.ModelAdmin):
     status_colored.short_description = 'Статус'
     
     def sla_status(self, obj):
-        if obj.status.is_final:
+        if obj.is_overdue:
+            if obj.status.is_final:
+                return format_html('<span style="color: red;">⚠ Просрочено</span>')
+            else:
+                return format_html('<span style="color: red;">⚠ Просрочено</span>')
+        elif obj.status.is_final:
             return format_html('<span style="color: green;">✓ Завершено</span>')
-        elif obj.is_overdue:
-            return format_html('<span style="color: red;">⚠ Просрочено</span>')
         else:
             time_left = obj.time_to_deadline
             if time_left:

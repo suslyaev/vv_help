@@ -51,6 +51,8 @@ class Client(models.Model):
         ordering = ['name']
     
     def __str__(self):
+        if self.organization:
+            return f"{self.name} ({self.organization.name})"
         return self.name
 
 
@@ -136,10 +138,14 @@ class Ticket(models.Model):
     @property
     def is_overdue(self):
         """Проверка просрочки по SLA"""
-        if self.status.is_final:
-            return False
-        
         sla_deadline = self.created_at + timezone.timedelta(hours=self.category.sla_hours)
+        
+        # Для завершенных обращений сравниваем с фактическим временем завершения
+        if self.status.is_final and (self.resolved_at or self.closed_at):
+            end_time = self.resolved_at or self.closed_at
+            return end_time > sla_deadline
+        
+        # Для активных обращений сравниваем с текущим временем
         return timezone.now() > sla_deadline
     
     @property
@@ -150,6 +156,13 @@ class Ticket(models.Model):
         
         sla_deadline = self.created_at + timezone.timedelta(hours=self.category.sla_hours)
         return sla_deadline - timezone.now()
+    
+    @property
+    def reaction_time(self):
+        """Время реакции (от создания до взятия в работу)"""
+        if not self.taken_at:
+            return None
+        return self.taken_at - self.created_at
     
     @property
     def working_time(self):

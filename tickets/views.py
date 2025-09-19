@@ -533,7 +533,8 @@ def client_list(request):
             Q(name__icontains=search_query) |
             Q(contact_person__icontains=search_query) |
             Q(phone__icontains=search_query) |
-            Q(email__icontains=search_query)
+            Q(email__icontains=search_query) |
+            Q(organization__name__icontains=search_query)
         )
     
     paginator = Paginator(clients, 25)
@@ -663,7 +664,8 @@ def autocomplete_clients(request):
             Q(name__icontains=query) |
             Q(contact_person__icontains=query) |
             Q(phone__icontains=query) |
-            Q(email__icontains=query)
+            Q(email__icontains=query) |
+            Q(organization__name__icontains=query)
         )
     clients = base_qs.select_related('organization').order_by('name')[:10]
     
@@ -807,6 +809,7 @@ def analytics(request):
     assigned_to_id = first_non_empty('assigned_to_id') or first_non_empty('assigned_to')
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
+    chart_type = request.GET.get('chart_type', 'tags')  # tags или organizations
 
     # Даты по умолчанию: текущий месяц
     from django.utils import timezone as dj_tz
@@ -844,14 +847,25 @@ def analytics(request):
         .order_by('day')
         .annotate(cnt=Count('id'))
     )
-    by_tags = []
-    # Разбор тегов по запятым
-    for t in tickets_qs.exclude(tags="").values_list('tags', flat=True):
-        for tag in [x.strip() for x in t.split(',') if x.strip()]:
-            by_tags.append(tag)
-    from collections import Counter
-    tags_counter = Counter(by_tags)
-    top_tags = sorted(tags_counter.items(), key=lambda x: x[1], reverse=True)[:20]
+    # Подсчет тегов или организаций в зависимости от chart_type
+    if chart_type == 'organizations':
+        from collections import Counter
+        org_counter = Counter()
+        for ticket in tickets_qs.select_related('client__organization'):
+            if ticket.client and ticket.client.organization:
+                org_counter[ticket.client.organization.name] += 1
+        top_orgs = sorted(org_counter.items(), key=lambda x: x[1], reverse=True)[:20]
+        chart_data = [{'name': k, 'count': v} for k, v in top_orgs]
+    else:  # tags
+        by_tags = []
+        # Разбор тегов по запятым
+        for t in tickets_qs.exclude(tags="").values_list('tags', flat=True):
+            for tag in [x.strip() for x in t.split(',') if x.strip()]:
+                by_tags.append(tag)
+        from collections import Counter
+        tags_counter = Counter(by_tags)
+        top_tags = sorted(tags_counter.items(), key=lambda x: x[1], reverse=True)[:20]
+        chart_data = [{'name': k, 'count': v} for k, v in top_tags]
 
     # Сериализация для фронта
     by_day_list = list(by_day)
@@ -861,9 +875,7 @@ def analytics(request):
     ]
     import json
     chart_by_day_json = json.dumps(by_day_serialized)
-    chart_tags_json = json.dumps([
-        {'tag': k, 'count': v} for k, v in top_tags
-    ])
+    chart_data_json = json.dumps(chart_data)
 
     # Краткая сводка для подписи под графиком
     total_count = tickets_qs.count()
@@ -905,7 +917,8 @@ def analytics(request):
             'date_to': date_to or '',
         },
         'chart_by_day_json': chart_by_day_json,
-        'chart_tags_json': chart_tags_json,
+        'chart_data_json': chart_data_json,
+        'chart_type': chart_type,
         'analytics_summary': {
             'total_count': total_count,
             'day_count': day_count,

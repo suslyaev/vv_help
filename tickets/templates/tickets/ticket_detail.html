@@ -60,7 +60,7 @@
             <div class="card-body">
                 <div class="row mb-3">
                     <div class="col-md-6">
-                        <strong>Клиент:</strong> {{ ticket.client.name }}
+                        <strong>Клиент:</strong> {{ ticket.client.name }}{% if ticket.client.organization %} ({{ ticket.client.organization.name }}){% endif %}
                     </div>
                     <div class="col-md-6">
                         <strong>Категория:</strong> {{ ticket.category.name }}
@@ -262,6 +262,13 @@
                 {% endif %}
                 
                 
+                
+                {% if ticket.reaction_time %}
+                <div class="mb-3">
+                    <strong>Время реакции:</strong><br>
+                    <small class="text-muted">{{ ticket.reaction_time|format_timedelta }}</small>
+                </div>
+                {% endif %}
                 
                 {% if ticket.working_time %}
                 <div class="mb-3">
