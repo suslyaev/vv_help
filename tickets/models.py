@@ -207,8 +207,15 @@ class TicketAudit(models.Model):
 
 class TicketComment(models.Model):
     """Комментарии к обращениям"""
+    AUTHOR_TYPE_CHOICES = [
+        ('user', 'Пользователь системы'),
+        ('client', 'Клиент'),
+    ]
+    
     ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name='comments', verbose_name='Обращение')
-    author = models.ForeignKey(User, on_delete=models.PROTECT, verbose_name='Автор')
+    author = models.ForeignKey(User, on_delete=models.PROTECT, verbose_name='Автор (пользователь)', null=True, blank=True)
+    author_type = models.CharField('Тип автора', max_length=10, choices=AUTHOR_TYPE_CHOICES, default='user')
+    author_client = models.ForeignKey(Client, on_delete=models.PROTECT, verbose_name='Автор (клиент)', null=True, blank=True)
     content = models.TextField('Содержание')
     is_internal = models.BooleanField('Внутренний комментарий', default=False, help_text='Не виден клиенту')
     created_at = models.DateTimeField('Создано', default=timezone.now)
@@ -218,8 +225,16 @@ class TicketComment(models.Model):
         verbose_name_plural = 'Комментарии'
         ordering = ['created_at']
     
+    def get_author_name(self):
+        """Получить имя автора комментария"""
+        if self.author_type == 'client' and self.author_client:
+            return self.author_client.name
+        elif self.author_type == 'user' and self.author:
+            return self.author.get_full_name() or self.author.username
+        return 'Неизвестный автор'
+    
     def __str__(self):
-        return f"Комментарий к #{self.ticket.id} от {self.author.username}"
+        return f"Комментарий к #{self.ticket.id} от {self.get_author_name()}"
 
 
 class TicketAttachment(models.Model):

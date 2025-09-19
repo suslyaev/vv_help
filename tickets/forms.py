@@ -81,13 +81,31 @@ class TicketForm(forms.ModelForm):
 
 
 class TicketCommentForm(forms.ModelForm):
+    # Поле для выбора клиента (только для внешних комментариев)
+    author_client_text = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control autocomplete-field',
+            'placeholder': 'Начните вводить клиента...',
+            'data-autocomplete-url': '/tickets/api/clients/',
+            'data-autocomplete-min-length': '0',
+        })
+    )
+    
     class Meta:
         model = TicketComment
-        fields = ['content', 'is_internal']
+        fields = ['content', 'is_internal', 'author_type']
         widgets = {
             'content': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
             'is_internal': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'author_type': forms.Select(attrs={'class': 'form-select'}),
         }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Предзаполняем тип автора по умолчанию
+        if not self.instance.pk:
+            self.fields['author_type'].initial = 'user'
 
 
 class ClientForm(forms.ModelForm):

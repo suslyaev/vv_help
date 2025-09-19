@@ -122,7 +122,7 @@ def ticket_list(request):
 def ticket_detail(request, ticket_id):
     """Детальная страница обращения"""
     ticket = get_object_or_404(Ticket, id=ticket_id)
-    comments = ticket.comments.select_related('author').order_by('created_at')
+    comments = ticket.comments.select_related('author', 'author_client').order_by('created_at')
     attachments = ticket.attachments.select_related('uploaded_by').order_by('-uploaded_at')
     
     if request.method == 'POST':
@@ -132,7 +132,26 @@ def ticket_detail(request, ticket_id):
             if form.is_valid():
                 comment = form.save(commit=False)
                 comment.ticket = ticket
-                comment.author = request.user
+                
+                # Устанавливаем автора в зависимости от типа
+                if comment.author_type == 'client':
+                    # Получаем ID клиента из скрытого поля автокомплита
+                    # Основное имя скрытого поля соответствует имени текстового поля + '_id'
+                    # Для поля author_client_text это будет author_client_text_id
+                    client_id = (
+                        request.POST.get('author_client_text_id')
+                        or request.POST.get('author_client_id')
+                    )
+                    if client_id and client_id.isdigit():
+                        try:
+                            comment.author_client = Client.objects.get(id=int(client_id))
+                            comment.author = None  # Очищаем автора-пользователя
+                        except Client.DoesNotExist:
+                            pass
+                else:  # author_type == 'user'
+                    comment.author = request.user
+                    comment.author_client = None  # Очищаем автора-клиента
+                
                 comment.save()
                 
                 # Создаем запись аудита

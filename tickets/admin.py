@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django import forms
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils import timezone
@@ -90,14 +91,26 @@ class TicketStatusAdmin(admin.ModelAdmin):
     ticket_count.short_description = 'Количество обращений'
 
 
+class TicketCommentInlineForm(forms.ModelForm):
+    class Meta:
+        model = TicketComment
+        fields = ['author', 'content', 'is_internal', 'created_at']
+        widgets = {
+            'content': forms.Textarea(attrs={'rows': 2, 'style': 'width: 60%;'}),
+        }
+
+
 class TicketCommentInline(admin.TabularInline):
     model = TicketComment
     extra = 0
-    readonly_fields = ['author', 'created_at']
-    fields = ['author', 'content', 'is_internal', 'created_at']
+    # Разрешаем редактировать автора, тип и клиента
+    readonly_fields = []
+    fields = ['author_type', 'author', 'author_client', 'content', 'is_internal', 'created_at']
+    form = TicketCommentInlineForm
+    autocomplete_fields = ['author_client', 'author']
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('author')
+        return super().get_queryset(request).select_related('author', 'author_client')
 
 
 class TicketAuditInline(admin.TabularInline):
@@ -218,17 +231,25 @@ class TicketAdmin(admin.ModelAdmin):
 
 @admin.register(TicketComment)
 class TicketCommentAdmin(admin.ModelAdmin):
-    list_display = ['ticket', 'author', 'content_short', 'is_internal', 'created_at']
-    list_filter = ['is_internal', 'created_at', 'author']
-    search_fields = ['content', 'ticket__title', 'author__username']
-    readonly_fields = ['author', 'created_at']
-    autocomplete_fields = ['ticket']
+    list_display = ['ticket', 'get_author_display', 'content_short', 'is_internal', 'created_at']
+    list_filter = ['is_internal', 'author_type', 'created_at', 'author', 'author_client']
+    search_fields = ['content', 'ticket__title', 'author__username', 'author_client__name']
+    # Разрешаем редактировать дату/время комментария
+    readonly_fields = []
+    autocomplete_fields = ['ticket', 'author_client']
     
     fieldsets = (
         ('Комментарий', {
-            'fields': ('ticket', 'author', 'content', 'is_internal', 'created_at')
+            'fields': ('ticket', 'content', 'is_internal', 'created_at')
+        }),
+        ('Автор', {
+            'fields': ('author_type', 'author', 'author_client')
         }),
     )
+    
+    def get_author_display(self, obj):
+        return obj.get_author_name()
+    get_author_display.short_description = 'Автор'
     
     def content_short(self, obj):
         return obj.content[:100] + '...' if len(obj.content) > 100 else obj.content

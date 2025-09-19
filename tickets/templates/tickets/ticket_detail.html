@@ -194,7 +194,12 @@
                     <div class="mb-3 p-3 border rounded {% if comment.is_internal %}bg-warning bg-opacity-10{% endif %}">
                         <div class="d-flex justify-content-between align-items-start mb-2">
                             <div>
-                                <strong>{{ comment.author.get_full_name|default:comment.author.username }}</strong>
+                                <strong>{{ comment.get_author_name }}</strong>
+                                {% if comment.author_type == 'client' %}
+                                    <span class="badge bg-info text-white ms-2">Клиент</span>
+                                {% elif comment.author_type == 'user' %}
+                                    <span class="badge bg-primary text-white ms-2">Система</span>
+                                {% endif %}
                                 {% if comment.is_internal %}
                                     <span class="badge bg-warning text-dark ms-2">Внутренний</span>
                                 {% endif %}
@@ -219,6 +224,24 @@
                             <div class="text-danger">{{ comment_form.content.errors }}</div>
                         {% endif %}
                     </div>
+                    
+                    <div class="mb-3">
+                        <label for="{{ comment_form.author_type.id_for_label }}" class="form-label">Автор комментария</label>
+                        {{ comment_form.author_type|add_class:"form-select" }}
+                        {% if comment_form.author_type.errors %}
+                            <div class="text-danger">{{ comment_form.author_type.errors }}</div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3" id="client-author-field" style="display: none;">
+                        <label for="{{ comment_form.author_client_text.id_for_label }}" class="form-label">Клиент</label>
+                        {{ comment_form.author_client_text|add_class:"form-control" }}
+                        <input type="hidden" name="author_client_id" id="author_client_id">
+                        {% if comment_form.author_client_text.errors %}
+                            <div class="text-danger">{{ comment_form.author_client_text.errors }}</div>
+                        {% endif %}
+                    </div>
+                    
                     <div class="mb-3">
                         <div class="form-check">
                             {{ comment_form.is_internal|add_class:"form-check-input" }}
@@ -335,4 +358,25 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const authorTypeSelect = document.getElementById('{{ comment_form.author_type.id_for_label }}');
+    const clientField = document.getElementById('client-author-field');
+    
+    function toggleClientField() {
+        if (authorTypeSelect.value === 'client') {
+            clientField.style.display = 'block';
+        } else {
+            clientField.style.display = 'none';
+        }
+    }
+    
+    // Инициализация
+    toggleClientField();
+    
+    // Обработчик изменения
+    authorTypeSelect.addEventListener('change', toggleClientField);
+});
+</script>
 {% endblock %}
