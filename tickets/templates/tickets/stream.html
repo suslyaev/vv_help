@@ -17,15 +17,16 @@
 
   <form method="post">
     {% csrf_token %}
+    <input type="hidden" name="message_id" id="message_id_input">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <div>
         <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#bulkCommentModal">Массовый комментарий</button>
-        <button name="action" value="bulk_delete" class="btn btn-outline-danger btn-sm">Удалить выбранные</button>
+        <button name="action" value="bulk_delete" class="btn btn-outline-danger btn-sm" onclick="return confirm('Вы уверены, что хотите удалить выбранные сообщения?');">Удалить выбранные</button>
       </div>
       <div class="d-flex align-items-center">
         <input type="date" class="form-control form-control-sm me-2" name="date_from">
         <input type="date" class="form-control form-control-sm me-2" name="date_to">
-        <button name="action" value="cleanup_period" class="btn btn-outline-secondary btn-sm">Очистить период</button>
+        <button name="action" value="cleanup_period" class="btn btn-outline-secondary btn-sm" onclick="return confirm('Вы уверены, что хотите удалить сообщения за указанный период?');">Очистить период</button>
       </div>
     </div>
 
@@ -69,12 +70,7 @@
                   <a class="btn btn-outline-secondary btn-sm" href="{% url 'tickets:ticket_detail' m.linked_ticket.id %}" target="_blank">Открыть #{{ m.linked_ticket.id }}</a>
                 </div>
               {% else %}
-                <form method="post" class="mb-2 d-inline-block">
-                  {% csrf_token %}
-                  <input type="hidden" name="action" value="create_ticket">
-                  <input type="hidden" name="message_id" value="{{ m.id }}">
-                  <button class="btn btn-success btn-sm" type="submit">Новое обращение</button>
-                </form>
+                <button class="btn btn-success btn-sm mb-2" type="submit" name="action" value="create_ticket" onclick="setMessageId({{ m.id }})">Новое обращение</button>
                 <button type="button" class="btn btn-outline-primary btn-sm mb-2" data-bs-toggle="modal" data-bs-target="#commentModal" data-message-id="{{ m.id }}">Комментарий</button>
                 <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#resolveModal" data-message-id="{{ m.id }}">Решение</button>
               {% endif %}
@@ -222,6 +218,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 });
+
+function setMessageId(messageId) {
+  document.getElementById('message_id_input').value = messageId;
+}
 </script>
 {% endblock %}
 
