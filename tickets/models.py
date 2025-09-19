@@ -287,3 +287,17 @@ class TicketTemplate(models.Model):
     
     def __str__(self):
         return f"{self.name} ({self.category})"
+
+
+class UserProfile(models.Model):
+    """Профиль пользователя для интеграций (Telegram и т.п.)"""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile', verbose_name='Пользователь')
+    telegram_user_id = models.CharField('Telegram user id', max_length=32, blank=True, help_text='ID пользователя Telegram')
+    can_use_telegram_bot = models.BooleanField('Доступ к Telegram-боту', default=False)
+
+    class Meta:
+        verbose_name = 'Профиль пользователя'
+        verbose_name_plural = 'Профили пользователей'
+
+    def __str__(self):
+        return f"Профиль {self.user.username}"

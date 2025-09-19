@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.db.models import Count, Q
 from .models import (
     Category, Client, Organization, TicketStatus, Ticket, TicketAudit, 
-    TicketComment, TicketAttachment, TicketTemplate
+    TicketComment, TicketAttachment, TicketTemplate, UserProfile
 )
 
 
@@ -324,6 +324,22 @@ class TicketTemplateAdmin(admin.ModelAdmin):
         if not change:
             obj.created_by = request.user
         super().save_model(request, obj, form, change)
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ['user', 'telegram_user_id', 'can_use_telegram_bot']
+    search_fields = ['user__username', 'user__email', 'telegram_user_id']
+    list_filter = ['can_use_telegram_bot']
+    autocomplete_fields = ['user']
+    fieldsets = (
+        ('Пользователь', {
+            'fields': ('user',)
+        }),
+        ('Telegram', {
+            'fields': ('telegram_user_id', 'can_use_telegram_bot')
+        }),
+    )
 
 
 # Кастомные действия для админки
