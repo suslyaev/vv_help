@@ -1110,7 +1110,7 @@ def stream(request):
         status = TicketStatus.objects.filter(is_final=False).order_by('order').first() or TicketStatus.objects.first()
 
         ticket = Ticket(
-            title='Создано из Telegram',
+            title=msg.text[:100] if msg.text else 'Сообщение из Telegram',
             description=msg.text,
             category=category,
             client=client,
@@ -1125,7 +1125,7 @@ def stream(request):
         ticket.save()
 
         msg.linked_ticket = ticket
-        msg.linked_action = 'new'
+        msg.linked_action = 'create_ticket'
         msg.processed_at = timezone.now()
         msg.save(update_fields=['linked_ticket', 'linked_action', 'processed_at'])
 
@@ -1172,7 +1172,7 @@ def stream(request):
         )
 
         msg.linked_ticket = ticket
-        msg.linked_action = 'resolve'
+        msg.linked_action = 'resolve_ticket'
         msg.processed_at = timezone.now()
         msg.save(update_fields=['linked_ticket', 'linked_action', 'processed_at'])
 
@@ -1224,6 +1224,12 @@ def stream(request):
         )
         comment.save()
 
+        # Обновляем сообщение в потоке
+        msg.linked_ticket = ticket
+        msg.linked_action = 'add_comment'
+        msg.processed_at = timezone.now()
+        msg.save()
+
         TicketAudit.objects.create(
             ticket=ticket,
             action='comment_added',
@@ -1237,7 +1243,6 @@ def stream(request):
     # Массовый комментарий по выбранным сообщениям
     if request.method == 'POST' and request.POST.get('action') == 'bulk_comment':
         ticket_id = request.POST.get('ticket_id')
-        is_internal = request.POST.get('is_internal') == 'on'
         ids = request.POST.getlist('selected')
         if not ticket_id or not ticket_id.isdigit():
             messages.error(request, 'Укажите корректный ID тикета для массового комментария')
@@ -1246,6 +1251,8 @@ def stream(request):
         msgs = TelegramMessage.objects.filter(id__in=ids).order_by('message_date')
         created = 0
         for msg in msgs:
+            # Получаем флаг "внутренний" для конкретного сообщения
+            is_internal = request.POST.get(f'is_internal_{msg.id}') == 'on'
             author_type = 'user'
             author = None
             author_client = None
@@ -1274,6 +1281,13 @@ def stream(request):
                 author=author,
                 author_client=author_client,
             )
+            
+            # Обновляем сообщение в потоке
+            msg.linked_ticket = ticket
+            msg.linked_action = 'add_comment'
+            msg.processed_at = timezone.now()
+            msg.save()
+            
             created += 1
         messages.success(request, mark_safe(f'Добавлено комментариев: {created} в обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a>'))
         return redirect('tickets:stream')
@@ -1318,3 +1332,99 @@ def stream(request):
         'uta_map': uta_map,
     }
     return render(request, 'tickets/stream.html', context)
+
+
+@login_required
+def get_active_tickets(request):
+    """API: получить все активные обращения для выбора (только для решения)"""
+    query = request.GET.get('q', '')
+    tickets = Ticket.objects.filter(
+        status__is_final=False
+    ).select_related('client', 'status', 'category').order_by('-created_at')
+    
+    if query:
+        tickets = tickets.filter(
+            Q(id__icontains=query) |
+            Q(title__icontains=query) |
+            Q(client__name__icontains=query) |
+            Q(category__name__icontains=query)
+        )
+    
+    # Ограничиваем количество результатов
+    tickets = tickets[:50]
+    
+    results = []
+    for ticket in tickets:
+        results.append({
+            'id': ticket.id,
+            'title': ticket.title,
+            'client_name': ticket.client.name,
+            'status_name': ticket.status.name,
+            'category_name': ticket.category.name,
+            'created_at': ticket.created_at.strftime('%d.%m.%Y %H:%M'),
+        })
+    
+    return JsonResponse({'results': results})
+
+
+@login_required
+def get_all_tickets(request):
+    """API: получить все обращения для выбора (для комментариев)"""
+    query = request.GET.get('q', '')
+    tickets = Ticket.objects.all().select_related('client', 'status', 'category').order_by('-created_at')
+    
+    if query:
+        tickets = tickets.filter(
+            Q(id__icontains=query) |
+            Q(title__icontains=query) |
+            Q(client__name__icontains=query) |
+            Q(category__name__icontains=query)
+        )
+    
+    # Ограничиваем количество результатов
+    tickets = tickets[:50]
+    
+    results = []
+    for ticket in tickets:
+        results.append({
+            'id': ticket.id,
+            'title': ticket.title,
+            'client_name': ticket.client.name,
+            'status_name': ticket.status.name,
+            'created_at': ticket.created_at.strftime('%d.%m.%Y %H:%M'),
+        })
+    
+    return JsonResponse({'results': results})
+
+
+@login_required
+def get_unresolved_tickets(request):
+    """API: получить все нерешенные обращения для выбора"""
+    query = request.GET.get('q', '')
+    tickets = Ticket.objects.filter(
+        status__is_final=False
+    ).select_related('client', 'status', 'category').order_by('-created_at')
+    
+    if query:
+        tickets = tickets.filter(
+            Q(id__icontains=query) |
+            Q(title__icontains=query) |
+            Q(client__name__icontains=query) |
+            Q(category__name__icontains=query)
+        )
+    
+    # Ограничиваем количество результатов
+    tickets = tickets[:50]
+    
+    results = []
+    for ticket in tickets:
+        results.append({
+            'id': ticket.id,
+            'title': ticket.title,
+            'client_name': ticket.client.name,
+            'status_name': ticket.status.name,
+            'category_name': ticket.category.name,
+            'created_at': ticket.created_at.strftime('%d.%m.%Y %H:%M'),
+        })
+    
+    return JsonResponse({'results': results})

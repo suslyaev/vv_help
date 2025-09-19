@@ -181,7 +181,7 @@ class Command(BaseCommand):
                     client = Client.objects.create(name='Неизвестный клиент')
 
             ticket = Ticket(
-                title='Создано из Telegram',
+                title=text[:100] if text else 'Сообщение из Telegram',
                 description=text,
                 category=category,
                 client=client,

@@ -37,7 +37,7 @@
             <div class="me-3" style="flex:1;">
               <div class="small text-muted mb-1">
                 <input type="checkbox" name="selected" value="{{ m.id }}" class="form-check-input me-2">
-                {{ m.message_date|date:"d.m.Y H:i" }} · Чат: {{ m.chat_title|default:m.chat_id }} · {{ m.media_type|upper }}
+                <span class="text-muted" style="font-size: 0.7rem;">msg_id: {{ m.message_id }}</span> · {{ m.message_date|date:"d.m.Y H:i" }} · Чат: {{ m.chat_title|default:m.chat_id }} · {{ m.media_type|upper }}
               </div>
               <div class="fw-semibold">
                 {{ m.from_username|default:m.from_fullname|default:m.from_user_id }}
@@ -61,20 +61,23 @@
               {% if m.linked_ticket %}
                 <div class="mb-2">
                   {% if m.linked_action == 'create_ticket' %}
-                    <span class="badge bg-success me-1">Создано</span>
+                    <span class="badge bg-success me-1"><i class="bi bi-plus-circle"></i> Создано обращение</span>
                   {% elif m.linked_action == 'add_comment' %}
-                    <span class="badge bg-info me-1">Комментарий</span>
+                    <span class="badge bg-info me-1"><i class="bi bi-chat-dots"></i> Добавлен комментарий</span>
                   {% elif m.linked_action == 'resolve_ticket' %}
-                    <span class="badge bg-primary me-1">Решено</span>
+                    <span class="badge bg-primary me-1"><i class="bi bi-check-circle"></i> Решено обращение</span>
                   {% endif %}
-                  <a class="btn btn-outline-secondary btn-sm" href="{% url 'tickets:ticket_detail' m.linked_ticket.id %}" target="_blank">Открыть #{{ m.linked_ticket.id }}</a>
+                  <div class="mt-1">
+                    <a class="btn btn-outline-secondary btn-sm" href="{% url 'tickets:ticket_detail' m.linked_ticket.id %}" target="_blank">Открыть #{{ m.linked_ticket.id }}</a>
+                  </div>
                 </div>
               {% else %}
-                <button class="btn btn-success btn-sm mb-2" type="submit" name="action" value="create_ticket" onclick="setMessageId({{ m.id }})">Новое обращение</button>
-                <button type="button" class="btn btn-outline-primary btn-sm mb-2" data-bs-toggle="modal" data-bs-target="#commentModal" data-message-id="{{ m.id }}">Комментарий</button>
-                <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#resolveModal" data-message-id="{{ m.id }}">Решение</button>
+                <div class="d-flex flex-wrap gap-1">
+                  <button class="btn btn-success btn-sm" type="submit" name="action" value="create_ticket" onclick="setMessageId({{ m.id }})">Новое обращение</button>
+                  <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#commentModal" data-message-id="{{ m.id }}">Комментарий</button>
+                  <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#resolveModal" data-message-id="{{ m.id }}">Решение</button>
+                </div>
               {% endif %}
-              <div class="small text-muted">msg_id: {{ m.message_id }}</div>
             </div>
           </div>
         </div>
@@ -97,7 +100,14 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
-            <input type="text" class="form-control form-control-sm mb-2" name="ticket_id" placeholder="ID тикета">
+            <div class="mb-3">
+              <label class="form-label">Выберите обращение:</label>
+              <div class="autocomplete-container">
+                <input type="text" class="form-control" id="commentTicketSearch" placeholder="Поиск по ID, теме или клиенту...">
+                <input type="hidden" name="ticket_id" id="commentTicketId">
+                <div class="autocomplete-dropdown" id="commentTicketDropdown"></div>
+              </div>
+            </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" name="is_internal" id="commentInternal">
               <label class="form-check-label" for="commentInternal">Внутренний</label>
@@ -124,7 +134,14 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
-            <input type="text" class="form-control form-control-sm mb-2" name="ticket_id" placeholder="ID тикета">
+            <div class="mb-3">
+              <label class="form-label">Выберите обращение для решения:</label>
+              <div class="autocomplete-container">
+                <input type="text" class="form-control" id="resolveTicketSearch" placeholder="Поиск по ID, теме или клиенту...">
+                <input type="hidden" name="ticket_id" id="resolveTicketId">
+                <div class="autocomplete-dropdown" id="resolveTicketDropdown"></div>
+              </div>
+            </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
@@ -147,10 +164,19 @@
           </div>
           <div class="modal-body">
             <div class="alert alert-info py-2">Будут добавлены комментарии для всех выбранных сообщений.</div>
-            <input type="text" class="form-control form-control-sm mb-2" name="ticket_id" placeholder="ID тикета">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="is_internal" id="bulkInternal">
-              <label class="form-check-label" for="bulkInternal">Внутренний</label>
+            <div class="mb-3">
+              <label class="form-label">Выбранные сообщения:</label>
+              <div id="selectedMessagesList" class="border rounded p-2" style="max-height: 150px; overflow-y: auto; background-color: #f8f9fa;">
+                <div class="text-muted small">Выберите сообщения на странице</div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Выберите обращение:</label>
+              <div class="autocomplete-container">
+                <input type="text" class="form-control" id="bulkTicketSearch" placeholder="Поиск по ID, теме или клиенту...">
+                <input type="hidden" name="ticket_id" id="bulkTicketId">
+                <div class="autocomplete-dropdown" id="bulkTicketDropdown"></div>
+              </div>
             </div>
           </div>
           <div class="modal-footer">
@@ -191,6 +217,11 @@ document.addEventListener('DOMContentLoaded', function() {
       var button = event.relatedTarget;
       var messageId = button.getAttribute('data-message-id');
       document.getElementById('commentMessageId').value = messageId;
+      
+      // Инициализируем автокомплит при открытии модального окна
+      setTimeout(() => {
+        initTicketAutocomplete('commentTicketSearch', 'commentTicketId', 'commentTicketDropdown', '/tickets/api/tickets/all/');
+      }, 100);
     });
   }
   var resolveModal = document.getElementById('resolveModal');
@@ -199,6 +230,11 @@ document.addEventListener('DOMContentLoaded', function() {
       var button = event.relatedTarget;
       var messageId = button.getAttribute('data-message-id');
       document.getElementById('resolveMessageId').value = messageId;
+      
+      // Инициализируем автокомплит при открытии модального окна
+      setTimeout(() => {
+        initTicketAutocomplete('resolveTicketSearch', 'resolveTicketId', 'resolveTicketDropdown', '/tickets/api/tickets/unresolved/');
+      }, 100);
     });
   }
   var bulkForm = document.getElementById('bulkCommentForm');
@@ -217,11 +253,145 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     });
   }
+  
+  // Handle bulk comment modal
+  var bulkCommentModal = document.getElementById('bulkCommentModal');
+  if (bulkCommentModal) {
+    bulkCommentModal.addEventListener('show.bs.modal', function (event) {
+      var selectedCheckboxes = document.querySelectorAll('input[name="selected"]:checked');
+      var selectedMessagesList = document.getElementById('selectedMessagesList');
+      
+      // Update selected messages display
+      if (selectedCheckboxes.length === 0) {
+        selectedMessagesList.innerHTML = '<div class="text-muted small">Выберите сообщения на странице</div>';
+      } else {
+        selectedMessagesList.innerHTML = '';
+        selectedCheckboxes.forEach(function(checkbox) {
+          var messageRow = checkbox.closest('.list-group-item');
+          var messageText = messageRow.querySelector('.small').textContent.trim();
+          var messageInfo = messageRow.querySelector('.fw-semibold').textContent.trim();
+          var messageDate = messageRow.querySelector('.small.text-muted').textContent.split(' · ')[0];
+          var messageId = checkbox.value;
+          
+          var messageItem = document.createElement('div');
+          messageItem.className = 'mb-2 p-2 bg-white rounded border';
+          messageItem.innerHTML = `
+            <div class="d-flex justify-content-between align-items-start">
+              <div style="flex: 1;">
+                <div class="small text-muted">${messageDate}</div>
+                <div class="fw-bold">${messageInfo}</div>
+                <div class="small">${messageText.substring(0, 100)}${messageText.length > 100 ? '...' : ''}</div>
+              </div>
+              <div class="ms-2">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="is_internal_${messageId}" id="is_internal_${messageId}">
+                  <label class="form-check-label small" for="is_internal_${messageId}">
+                    Внутренний
+                  </label>
+                </div>
+              </div>
+            </div>
+          `;
+          selectedMessagesList.appendChild(messageItem);
+        });
+      }
+      
+      // Инициализируем автокомплит при открытии модального окна
+      setTimeout(() => {
+        initTicketAutocomplete('bulkTicketSearch', 'bulkTicketId', 'bulkTicketDropdown', '/tickets/api/tickets/all/');
+      }, 100);
+    });
+  }
 });
 
 function setMessageId(messageId) {
   document.getElementById('message_id_input').value = messageId;
 }
+
+// Автокомплит для выбора тикетов
+function initTicketAutocomplete(inputId, hiddenId, dropdownId, apiUrl) {
+  const input = document.getElementById(inputId);
+  const hidden = document.getElementById(hiddenId);
+  const dropdown = document.getElementById(dropdownId);
+  
+  if (!input || !hidden || !dropdown) {
+    console.error('Missing elements for autocomplete:', {inputId, hiddenId, dropdownId});
+    return;
+  }
+  
+  // Проверяем, не инициализирован ли уже автокомплит
+  if (input.hasAttribute('data-autocomplete-initialized')) {
+    return;
+  }
+  input.setAttribute('data-autocomplete-initialized', 'true');
+  
+  let timeout;
+  
+  // Функция для загрузки тикетов
+  function loadTickets(query = '') {
+    clearTimeout(timeout);
+    
+    timeout = setTimeout(() => {
+      const url = query ? `${apiUrl}?q=${encodeURIComponent(query)}` : apiUrl;
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          dropdown.innerHTML = '';
+          
+          if (data.results && data.results.length > 0) {
+            data.results.forEach(ticket => {
+              const item = document.createElement('div');
+              item.className = 'autocomplete-item';
+              item.innerHTML = `
+                <div class="fw-bold">#${ticket.id} ${ticket.title}</div>
+                <small class="text-muted">${ticket.client_name} · ${ticket.status_name} · ${ticket.created_at}</small>
+              `;
+              item.addEventListener('click', () => {
+                input.value = `#${ticket.id} ${ticket.title}`;
+                hidden.value = ticket.id;
+                dropdown.style.display = 'none';
+              });
+              dropdown.appendChild(item);
+            });
+            dropdown.style.display = 'block';
+          } else {
+            dropdown.style.display = 'none';
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching tickets:', error);
+          dropdown.style.display = 'none';
+        });
+    }, 300);
+  }
+
+  // Показать список при клике на поле (если пустое)
+  input.addEventListener('focus', function() {
+    if (!this.value.trim()) {
+      loadTickets();
+    }
+  });
+
+  // Фильтровать при вводе
+  input.addEventListener('input', function() {
+    const query = this.value.trim();
+    if (query) {
+      loadTickets(query);
+    } else {
+      // Если поле очистили, показать все тикеты
+      loadTickets();
+    }
+  });
+  
+  // Скрыть dropdown при клике вне его
+  document.addEventListener('click', function(e) {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+}
+
+// Автокомплит инициализируется при открытии модальных окон
 </script>
 {% endblock %}
 
