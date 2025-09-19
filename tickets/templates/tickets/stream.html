@@ -48,7 +48,9 @@
                     {% else %}
                       {% with cl=clients_map|dict_get:cid %}
                         {% if cl %}
-                          <span class="badge bg-info text-dark ms-1">{{ cl.name }}</span>
+                          <span class="badge bg-info text-dark ms-1">
+                            {{ cl.name }}{% if cl.organization %} ({{ cl.organization.name }}){% endif %}
+                          </span>
                         {% endif %}
                       {% endwith %}
                     {% endif %}
@@ -73,7 +75,7 @@
                 </div>
               {% else %}
                 <div class="d-flex flex-wrap gap-1">
-                  <button class="btn btn-success btn-sm" type="submit" name="action" value="create_ticket" onclick="setMessageId({{ m.id }})">Новое обращение</button>
+                  <button class="btn btn-success btn-sm" type="submit" name="action" value="create_ticket" data-message-id="{{ m.id }}">Новое обращение</button>
                   <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#commentModal" data-message-id="{{ m.id }}">Комментарий</button>
                   <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#resolveModal" data-message-id="{{ m.id }}">Решение</button>
                 </div>
@@ -307,6 +309,19 @@ document.addEventListener('DOMContentLoaded', function() {
 function setMessageId(messageId) {
   document.getElementById('message_id_input').value = messageId;
 }
+
+// Обработчик для кнопки "Новое обращение"
+document.addEventListener('DOMContentLoaded', function() {
+  const createButtons = document.querySelectorAll('button[name="action"][value="create_ticket"]');
+  createButtons.forEach(function(button) {
+    button.addEventListener('click', function(e) {
+      const messageId = this.getAttribute('data-message-id');
+      if (messageId) {
+        setMessageId(messageId);
+      }
+    });
+  });
+});
 
 // Автокомплит для выбора тикетов
 function initTicketAutocomplete(inputId, hiddenId, dropdownId, apiUrl) {

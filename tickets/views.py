@@ -1316,7 +1316,7 @@ def stream(request):
 
     # Маппинг для отображения на странице (только текущая страница)
     from_ids = {m.from_user_id for m in page_obj.object_list if m.from_user_id}
-    clients_map = {c.external_id: c for c in Client.objects.filter(external_id__in=from_ids)}
+    clients_map = {c.external_id: c for c in Client.objects.select_related('organization').filter(external_id__in=from_ids)}
     from .models import UserTelegramAccess
     uta_map = {}
     for access in UserTelegramAccess.objects.select_related('user').filter(telegram_user_id__in=from_ids, is_allowed=True):
