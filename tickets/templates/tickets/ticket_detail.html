@@ -7,13 +7,20 @@
 
 {% block page_actions %}
     <div class="btn-group" role="group">
-        {% if not ticket.status.is_working %}
+        {% if ticket.status.is_final %}
+            <!-- Для финальных статусов - кнопка "Вернуть в работу" -->
+            <a href="{% url 'tickets:take_ticket' ticket.id %}" class="btn btn-success">
+                <i class="bi bi-arrow-clockwise"></i> Вернуть в работу
+            </a>
+        {% elif not ticket.status.is_working %}
+            <!-- Для нерабочих статусов (новые, ожидание) - кнопка "Взять в работу" -->
             {% if not ticket.assigned_to or ticket.assigned_to == user %}
                 <a href="{% url 'tickets:take_ticket' ticket.id %}" class="btn btn-success">
                     <i class="bi bi-hand-index"></i> Взять в работу
                 </a>
             {% endif %}
         {% else %}
+            <!-- Для рабочих статусов -->
             {% if ticket.status.name != 'Ожидает ответа' %}
                 <a href="{% url 'tickets:set_waiting' ticket.id %}" class="btn btn-warning">
                     <i class="bi bi-pause-circle"></i> Ожидает ответа
@@ -33,6 +40,10 @@
         
         <a href="{% url 'tickets:ticket_edit' ticket.id %}" class="btn btn-warning">
             <i class="bi bi-pencil"></i> Редактировать
+        </a>
+        
+        <a href="{% url 'admin:tickets_ticket_change' ticket.id %}" class="btn btn-info" target="_blank">
+            <i class="bi bi-gear"></i> Админка
         </a>
         
         <a href="{% url 'tickets:ticket_list' %}" class="btn btn-secondary">

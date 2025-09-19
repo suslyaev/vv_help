@@ -181,6 +181,7 @@ class TicketAudit(models.Model):
         ('status_changed', 'Изменен статус'),
         ('assigned', 'Назначен исполнитель'),
         ('taken', 'Взято в работу'),
+        ('returned_to_work', 'Возвращено в работу'),
         ('resolved', 'Решено'),
         ('updated', 'Обновлено'),
         ('comment_added', 'Добавлен комментарий'),

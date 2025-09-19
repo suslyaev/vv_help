@@ -377,10 +377,11 @@ def ticket_edit(request, ticket_id):
 
 @login_required
 def take_ticket(request, ticket_id):
-    """Взять обращение в работу"""
+    """Взять обращение в работу или вернуть из финального статуса"""
     ticket = get_object_or_404(Ticket, id=ticket_id)
     
-    if ticket.assigned_to and ticket.assigned_to != request.user:
+    # Проверяем, можно ли взять в работу
+    if ticket.assigned_to and ticket.assigned_to != request.user and not ticket.status.is_final:
         messages.error(request, 'Обращение уже назначено другому исполнителю')
         return redirect('tickets:ticket_detail', ticket_id=ticket.id)
     
@@ -390,6 +391,16 @@ def take_ticket(request, ticket_id):
         messages.error(request, 'Статус "В работе" не найден')
         return redirect('tickets:ticket_detail', ticket_id=ticket.id)
     
+    # Определяем действие для аудита
+    if ticket.status.is_final:
+        action = 'returned_to_work'
+        comment_text = 'Возвращено в работу из финального статуса'
+        success_message = f'Обращение #{ticket.id} возвращено в работу'
+    else:
+        action = 'taken'
+        comment_text = 'Взято в работу'
+        success_message = f'Обращение #{ticket.id} взято в работу'
+    
     ticket.assigned_to = request.user
     ticket.status = working_status
     ticket.taken_at = timezone.now()
@@ -398,12 +409,12 @@ def take_ticket(request, ticket_id):
     # Создаем запись аудита
     TicketAudit.objects.create(
         ticket=ticket,
-        action='taken',
+        action=action,
         user=request.user,
-        comment='Взято в работу'
+        comment=comment_text
     )
     
-    messages.success(request, f'Обращение #{ticket.id} взято в работу')
+    messages.success(request, success_message)
     return redirect('tickets:ticket_detail', ticket_id=ticket.id)
 
 
