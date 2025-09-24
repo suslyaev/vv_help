@@ -2417,11 +2417,60 @@ def stream(request):
         
         ticket.save()
         
-        # Создаем комментарий с текстом сообщения из потока
+        # Создаем комментарий с текстом сообщения из потока от имени клиента
+        # Определяем автора сообщения
+        author_type = 'client'
+        author_client = None
+        author_user = None
+        
+        # Проверяем, является ли отправитель системным пользователем
+        if msg.from_user_id:
+            try:
+                from tickets.models import UserTelegramAccess
+                telegram_access = UserTelegramAccess.objects.filter(
+                    telegram_user_id=msg.from_user_id,
+                    is_allowed=True
+                ).select_related('user').first()
+                
+                if telegram_access:
+                    # Это системный пользователь
+                    author_type = 'user'
+                    author_user = telegram_access.user
+                else:
+                    # Это клиент, ищем по external_id
+                    author_client = Client.objects.filter(external_id=msg.from_user_id).first()
+                    if not author_client:
+                        # Если клиент не найден, создаем комментарий от неизвестного клиента
+                        existing_unknown = Client.objects.filter(
+                            name='Неизвестный клиент',
+                            external_id=msg.from_user_id
+                        ).first()
+                        
+                        if existing_unknown:
+                            author_client = existing_unknown
+                        else:
+                            # Создаем нового клиента с уникальным именем
+                            author_client = Client.objects.create(
+                                name=f'Неизвестный клиент ({msg.from_username or msg.from_user_id})',
+                                external_id=msg.from_user_id,
+                                contact_person=msg.from_fullname or msg.from_username or 'Не указано'
+                            )
+            except Exception as e:
+                # Если произошла ошибка, создаем комментарий от неизвестного клиента
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Error determining author for message {msg.id}: {e}")
+                author_client = Client.objects.create(
+                    name=f'Неизвестный клиент ({msg.from_username or msg.from_user_id})',
+                    external_id=msg.from_user_id,
+                    contact_person=msg.from_fullname or msg.from_username or 'Не указано'
+                )
+        
         TicketComment.objects.create(
             ticket=ticket,
-            author=request.user,
-            author_type='user',
+            author=author_user,
+            author_client=author_client,
+            author_type=author_type,
             content=msg.text or '',
             is_internal=is_internal,
             telegram_message_id=msg.message_id,
@@ -2512,11 +2561,60 @@ def stream(request):
         
         ticket.save()
         
-        # Создаем комментарий с текстом сообщения из потока
+        # Создаем комментарий с текстом сообщения из потока от имени клиента
+        # Определяем автора сообщения
+        author_type = 'client'
+        author_client = None
+        author_user = None
+        
+        # Проверяем, является ли отправитель системным пользователем
+        if msg.from_user_id:
+            try:
+                from tickets.models import UserTelegramAccess
+                telegram_access = UserTelegramAccess.objects.filter(
+                    telegram_user_id=msg.from_user_id,
+                    is_allowed=True
+                ).select_related('user').first()
+                
+                if telegram_access:
+                    # Это системный пользователь
+                    author_type = 'user'
+                    author_user = telegram_access.user
+                else:
+                    # Это клиент, ищем по external_id
+                    author_client = Client.objects.filter(external_id=msg.from_user_id).first()
+                    if not author_client:
+                        # Если клиент не найден, создаем комментарий от неизвестного клиента
+                        existing_unknown = Client.objects.filter(
+                            name='Неизвестный клиент',
+                            external_id=msg.from_user_id
+                        ).first()
+                        
+                        if existing_unknown:
+                            author_client = existing_unknown
+                        else:
+                            # Создаем нового клиента с уникальным именем
+                            author_client = Client.objects.create(
+                                name=f'Неизвестный клиент ({msg.from_username or msg.from_user_id})',
+                                external_id=msg.from_user_id,
+                                contact_person=msg.from_fullname or msg.from_username or 'Не указано'
+                            )
+            except Exception as e:
+                # Если произошла ошибка, создаем комментарий от неизвестного клиента
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Error determining author for message {msg.id}: {e}")
+                author_client = Client.objects.create(
+                    name=f'Неизвестный клиент ({msg.from_username or msg.from_user_id})',
+                    external_id=msg.from_user_id,
+                    contact_person=msg.from_fullname or msg.from_username or 'Не указано'
+                )
+        
         TicketComment.objects.create(
             ticket=ticket,
-            author=request.user,
-            author_type='user',
+            author=author_user,
+            author_client=author_client,
+            author_type=author_type,
             content=msg.text or '',
             is_internal=is_internal,
             telegram_message_id=msg.message_id,
