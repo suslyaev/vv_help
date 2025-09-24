@@ -2387,6 +2387,17 @@ def stream(request):
         
         ticket.save()
         
+        # Создаем комментарий с текстом сообщения из потока
+        TicketComment.objects.create(
+            ticket=ticket,
+            author=request.user,
+            author_type='user',
+            content=msg.text or '',
+            is_internal=is_internal,
+            telegram_message_id=msg.message_id,
+            created_at=msg.message_date
+        )
+        
         # Создаем комментарий с пользовательским текстом (если есть)
         if comment:
             TicketComment.objects.create(
@@ -2395,7 +2406,7 @@ def stream(request):
                 author_type='user',
                 content=comment,
                 is_internal=is_internal,
-                telegram_message_id=msg.message_id,
+                telegram_message_id=None,  # Не связываем с Telegram сообщением
                 created_at=timezone.now()
             )
         
@@ -2471,6 +2482,17 @@ def stream(request):
         
         ticket.save()
         
+        # Создаем комментарий с текстом сообщения из потока
+        TicketComment.objects.create(
+            ticket=ticket,
+            author=request.user,
+            author_type='user',
+            content=msg.text or '',
+            is_internal=is_internal,
+            telegram_message_id=msg.message_id,
+            created_at=msg.message_date
+        )
+        
         # Создаем комментарий с пользовательским текстом (если есть)
         if comment:
             TicketComment.objects.create(
@@ -2479,7 +2501,7 @@ def stream(request):
                 author_type='user',
                 content=comment,
                 is_internal=is_internal,
-                telegram_message_id=msg.message_id,
+                telegram_message_id=None,  # Не связываем с Telegram сообщением
                 created_at=timezone.now()
             )
         

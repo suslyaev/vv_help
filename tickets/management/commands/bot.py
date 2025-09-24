@@ -292,19 +292,52 @@ class Command(BaseCommand):
             author_client = None
             author_user = None
             
-            # Пытаемся найти клиента по external_id
+            # Сначала проверяем, является ли отправитель системным пользователем
             if telegram_message.from_user_id:
                 try:
-                    author_client = Client.objects.get(external_id=telegram_message.from_user_id)
-                except Client.DoesNotExist:
-                    # Если клиент не найден, создаем комментарий от неизвестного клиента
-                    author_client, _ = Client.objects.get_or_create(
-                        name='Неизвестный клиент',
-                        defaults={
-                            'external_id': telegram_message.from_user_id,
-                            'contact_person': telegram_message.from_fullname or telegram_message.from_username or 'Не указано'
-                        }
-                    )
+                    # Проверяем, есть ли пользователь в UserTelegramAccess
+                    from tickets.models import UserTelegramAccess
+                    telegram_access = UserTelegramAccess.objects.filter(
+                        telegram_user_id=telegram_message.from_user_id,
+                        is_allowed=True
+                    ).select_related('user').first()
+                    
+                    if telegram_access:
+                        # Это системный пользователь
+                        author_type = 'user'
+                        author_user = telegram_access.user
+                        logging.info(f"Reply from system user: {telegram_access.user.username}")
+                    else:
+                        # Это клиент, ищем по external_id
+                        author_client = Client.objects.filter(external_id=telegram_message.from_user_id).first()
+                        if not author_client:
+                            # Если клиент не найден, ищем существующего "Неизвестного клиента" или создаем нового
+                            existing_unknown = Client.objects.filter(
+                                name='Неизвестный клиент',
+                                external_id=telegram_message.from_user_id
+                            ).first()
+                            
+                            if existing_unknown:
+                                author_client = existing_unknown
+                            else:
+                                # Создаем нового клиента с уникальным именем
+                                author_client = Client.objects.create(
+                                    name=f'Неизвестный клиент ({telegram_message.from_username or telegram_message.from_user_id})',
+                                    external_id=telegram_message.from_user_id,
+                                    contact_person=telegram_message.from_fullname or telegram_message.from_username or 'Не указано'
+                                )
+                except Exception as e:
+                    # Если произошла любая ошибка, создаем комментарий от неизвестного клиента
+                    logging.warning(f"Error determining author type for external_id {telegram_message.from_user_id}: {e}")
+                    try:
+                        author_client = Client.objects.create(
+                            name=f'Неизвестный клиент ({telegram_message.from_username or telegram_message.from_user_id})',
+                            external_id=telegram_message.from_user_id,
+                            contact_person=telegram_message.from_fullname or telegram_message.from_username or 'Не указано'
+                        )
+                    except Exception as create_error:
+                        logging.error(f"Failed to create client: {create_error}")
+                        author_client = None
             
             # Создаем новый комментарий
             new_comment = TicketComment.objects.create(
