@@ -1374,6 +1374,22 @@ def stream(request):
     for access in UserTelegramAccess.objects.select_related('user').filter(telegram_user_id__in=from_ids, is_allowed=True):
         uta_map[access.telegram_user_id] = access.user
 
+    # Загружаем сообщения-ответы для отображения цитат
+    reply_to_ids = {m.reply_to_message_id for m in page_obj.object_list if m.reply_to_message_id}
+    reply_messages_map = {}
+    if reply_to_ids:
+        reply_messages = TelegramMessage.objects.filter(
+            message_id__in=reply_to_ids,
+            chat_id__in={m.chat_id for m in page_obj.object_list}
+        ).values('message_id', 'chat_id', 'text', 'from_username', 'from_fullname')
+        
+        for reply in reply_messages:
+            key = f"{reply['chat_id']}_{reply['message_id']}"
+            reply_messages_map[key] = {
+                'text': reply['text'],
+                'author': reply['from_username'] or reply['from_fullname'] or 'Неизвестный'
+            }
+
     # Получаем название группы для отображения в фильтре
     group_name = ''
     if group_id:
@@ -1392,6 +1408,7 @@ def stream(request):
         },
         'clients_map': clients_map,
         'uta_map': uta_map,
+        'reply_messages_map': reply_messages_map,
     }
     return render(request, 'tickets/stream.html', context)
 

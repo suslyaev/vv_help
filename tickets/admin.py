@@ -346,10 +346,10 @@ class UserTelegramAccessAdmin(admin.ModelAdmin):
 
 @admin.register(TelegramMessage)
 class TelegramMessageAdmin(admin.ModelAdmin):
-    list_display = ['message_date', 'chat_title', 'from_username', 'from_user_id', 'media_type', 'text_short', 'linked_ticket']
+    list_display = ['message_date', 'chat_title', 'from_username', 'from_user_id', 'media_type', 'text_short', 'reply_to_message_id', 'linked_ticket']
     list_filter = ['media_type', 'chat_title']
-    search_fields = ['text', 'from_username', 'from_user_id', 'chat_title', 'chat_id']
-    readonly_fields = ['message_id', 'chat_id', 'chat_title', 'from_user_id', 'from_username', 'from_fullname', 'text', 'media_type', 'message_date', 'created_at', 'linked_ticket', 'linked_action', 'processed_at']
+    search_fields = ['text', 'from_username', 'from_user_id', 'chat_title', 'chat_id', 'reply_to_message_id']
+    readonly_fields = ['message_id', 'reply_to_message_id', 'chat_id', 'chat_title', 'from_user_id', 'from_username', 'from_fullname', 'text', 'media_type', 'message_date', 'created_at', 'linked_ticket', 'linked_action', 'processed_at']
     ordering = ['-message_date']
 
     def text_short(self, obj):

@@ -327,6 +327,7 @@ class TelegramMessage(models.Model):
     ]
 
     message_id = models.CharField('ID сообщения', max_length=64)
+    reply_to_message_id = models.CharField('ID сообщения-ответа', max_length=64, blank=True, help_text='ID сообщения, на которое отвечает данное сообщение')
     chat_id = models.CharField('ID чата', max_length=64)
     chat_title = models.CharField('Название чата', max_length=255, blank=True)
     from_user_id = models.CharField('ID отправителя', max_length=64, blank=True)
@@ -350,6 +351,7 @@ class TelegramMessage(models.Model):
             models.Index(fields=['chat_id', 'message_id']),
             models.Index(fields=['from_user_id']),
             models.Index(fields=['message_date']),
+            models.Index(fields=['reply_to_message_id']),
         ]
 
     def __str__(self):

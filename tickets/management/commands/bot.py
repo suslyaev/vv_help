@@ -217,8 +217,14 @@ class Command(BaseCommand):
         chat_id = str(chat.id)
         chat_title = chat.title or chat.username or ''
         from_user = message.from_user
+        # Получаем ID сообщения, на которое отвечают (если есть)
+        reply_to_message_id = ''
+        if getattr(message, 'reply_to_message', None):
+            reply_to_message_id = str(message.reply_to_message.message_id)
+
         TelegramMessage.objects.create(
             message_id=str(message.message_id),
+            reply_to_message_id=reply_to_message_id,
             chat_id=chat_id,
             chat_title=chat_title,
             from_user_id=str(from_user.id) if from_user else '',

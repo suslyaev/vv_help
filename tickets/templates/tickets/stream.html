@@ -99,6 +99,21 @@
                   {% endwith %}
                 {% endwith %}
               </div>
+              
+              {% if m.reply_to_message_id %}
+                {% with reply_key=m.chat_id|add:"_"|add:m.reply_to_message_id %}
+                  {% with reply_msg=reply_messages_map|dict_get:reply_key %}
+                    {% if reply_msg %}
+                      <div class="border-start border-2 border-secondary ps-2 mb-1 bg-light" style="font-size: 0.75rem; line-height: 1.2;">
+                        <div class="text-muted mb-1">
+                          ↳ {{ reply_msg.author }}: {{ reply_msg.text|truncatechars:80 }}
+                        </div>
+                      </div>
+                    {% endif %}
+                  {% endwith %}
+                {% endwith %}
+              {% endif %}
+              
               <div class="small" style="white-space: pre-wrap; line-height: 1.2;">{{ m.text }}</div>
             </div>
             <div class="text-end" style="min-width: 260px;">
