@@ -137,11 +137,11 @@ class TicketAttachmentInline(admin.TabularInline):
 @admin.register(Ticket)
 class TicketAdmin(admin.ModelAdmin):
     list_display = [
-        'id', 'title_short', 'client', 'category', 'status_colored', 
+        'id', 'title_short', 'client', 'organization', 'category', 'status_colored', 
         'assigned_to', 'priority', 'created_at', 'sla_status', 'working_time_display'
     ]
     list_filter = [
-        'status', 'priority', 'category', 'assigned_to', 'created_at',
+        'status', 'priority', 'category', 'organization', 'assigned_to', 'created_at',
         ('category__parent', admin.EmptyFieldListFilter),
     ]
     search_fields = ['title', 'description', 'client__name', 'tags']
@@ -151,7 +151,7 @@ class TicketAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Основная информация', {
-            'fields': ('title', 'description', 'category', 'client', 'priority', 'tags')
+            'fields': ('title', 'description', 'category', 'client', 'organization', 'priority', 'tags')
         }),
         ('Статус и исполнитель', {
             'fields': ('status', 'assigned_to')
@@ -171,7 +171,7 @@ class TicketAdmin(admin.ModelAdmin):
     )
     
     inlines = [TicketCommentInline, TicketAttachmentInline, TicketAuditInline]
-    autocomplete_fields = ['client', 'category', 'status', 'assigned_to']
+    autocomplete_fields = ['client', 'organization', 'category', 'status', 'assigned_to']
     
     def title_short(self, obj):
         return obj.title[:50] + '...' if len(obj.title) > 50 else obj.title
@@ -211,7 +211,7 @@ class TicketAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         return super().get_queryset(request).select_related(
-            'client', 'category', 'status', 'assigned_to', 'created_by'
+            'client', 'organization', 'category', 'status', 'assigned_to', 'created_by'
         ).prefetch_related('comments', 'audit_logs')
     
     def save_model(self, request, obj, form, change):

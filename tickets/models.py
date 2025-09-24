@@ -103,6 +103,7 @@ class Ticket(models.Model):
     description = models.TextField('Описание')
     category = models.ForeignKey(Category, on_delete=models.PROTECT, verbose_name='Категория')
     client = models.ForeignKey(Client, on_delete=models.PROTECT, verbose_name='Клиент')
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT, verbose_name='Организация', null=True, blank=True)
     priority = models.CharField('Приоритет', max_length=10, choices=PRIORITY_CHOICES, default='normal')
     
     # Статус и исполнители

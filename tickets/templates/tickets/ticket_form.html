@@ -33,26 +33,16 @@
             <div class="card-body">
                 <form method="post" enctype="multipart/form-data">
                     {% csrf_token %}
+                    {% if ticket %}
+                        <input type="hidden" name="status" value="{{ ticket.status.id }}">
+                    {% endif %}
                     
-                    <div class="row">
-                        <div class="col-md-8">
-                            <div class="mb-3">
-                                <label for="{{ form.title.id_for_label }}" class="form-label">Заголовок *</label>
-                                {{ form.title|add_class:"form-control" }}
-                                {% if form.title.errors %}
-                                    <div class="text-danger">{{ form.title.errors }}</div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="mb-3">
-                                <label for="{{ form.priority.id_for_label }}" class="form-label">Приоритет</label>
-                                {{ form.priority|add_class:"form-control" }}
-                                {% if form.priority.errors %}
-                                    <div class="text-danger">{{ form.priority.errors }}</div>
-                                {% endif %}
-                            </div>
-                        </div>
+                    <div class="mb-3">
+                        <label for="{{ form.title.id_for_label }}" class="form-label">Заголовок *</label>
+                        {{ form.title|add_class:"form-control" }}
+                        {% if form.title.errors %}
+                            <div class="text-danger">{{ form.title.errors }}</div>
+                        {% endif %}
                     </div>
 
                     <div class="mb-3">
@@ -88,6 +78,18 @@
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
+                                <label for="{{ form.priority.id_for_label }}" class="form-label">Приоритет</label>
+                                {{ form.priority|add_class:"form-control" }}
+                                {% if form.priority.errors %}
+                                    <div class="text-danger">{{ form.priority.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
                                 <label for="{{ form.client.id_for_label }}" class="form-label">Клиент *</label>
                                 {{ form.client }}
                                 {% if ticket and ticket.client %}
@@ -108,18 +110,31 @@
                                 {% endif %}
                             </div>
                         </div>
-                    </div>
-
-                    <div class="row">
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="{{ form.status.id_for_label }}" class="form-label">Статус</label>
-                                {{ form.status|add_class:"form-control" }}
-                                {% if form.status.errors %}
-                                    <div class="text-danger">{{ form.status.errors }}</div>
+                                <label for="{{ form.organization.id_for_label }}" class="form-label">Организация</label>
+                                {{ form.organization }}
+                                {% if ticket and ticket.organization %}
+                                    <script>
+                                        document.addEventListener('DOMContentLoaded', function() {
+                                            const f = document.getElementById('{{ form.organization.id_for_label }}');
+                                            if (f) { f.value = '{{ ticket.organization.name|escapejs }}'; }
+                                            let hidden = document.createElement('input');
+                                            hidden.type = 'hidden';
+                                            hidden.name = 'organization_id';
+                                            hidden.value = '{{ ticket.organization.id }}';
+                                            f.parentNode && f.parentNode.appendChild(hidden);
+                                        });
+                                    </script>
+                                {% endif %}
+                                {% if form.organization.errors %}
+                                    <div class="text-danger">{{ form.organization.errors }}</div>
                                 {% endif %}
                             </div>
                         </div>
+                    </div>
+
+                    <div class="row">
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="{{ form.assigned_to.id_for_label }}" class="form-label">Исполнитель</label>
@@ -161,9 +176,6 @@
                                 {% endif %}
                             </div>
                         </div>
-                    </div>
-
-                    <div class="row">
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="{{ form.tags.id_for_label }}" class="form-label">Теги</label>
@@ -174,17 +186,8 @@
                                 {% endif %}
                             </div>
                         </div>
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="{{ form.external_message_id.id_for_label }}" class="form-label">ID сообщения</label>
-                                {{ form.external_message_id|add_class:"form-control" }}
-                                <small class="form-text text-muted">ID сообщения в чате</small>
-                                {% if form.external_message_id.errors %}
-                                    <div class="text-danger">{{ form.external_message_id.errors }}</div>
-                                {% endif %}
-                            </div>
-                        </div>
                     </div>
+
 
                     {% if not ticket %}
                     <div class="mb-3">

@@ -74,11 +74,19 @@
                         <strong>Клиент:</strong> {{ ticket.client.name }}{% if ticket.client.organization %} ({{ ticket.client.organization.name }}){% endif %}
                     </div>
                     <div class="col-md-6">
-                        <strong>Категория:</strong> {{ ticket.category.name }}
+                        <strong>Организация:</strong> 
+                        {% if ticket.organization %}
+                            {{ ticket.organization.name }}
+                        {% else %}
+                            <span class="text-muted">Не указана</span>
+                        {% endif %}
                     </div>
                 </div>
                 
                 <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Категория:</strong> {{ ticket.category.name }}
+                    </div>
                     <div class="col-md-6">
                         <strong>Исполнитель:</strong> 
                         {% if ticket.assigned_to %}
@@ -86,9 +94,6 @@
                         {% else %}
                             <span class="text-muted">Не назначен</span>
                         {% endif %}
-                    </div>
-                    <div class="col-md-6">
-                        <strong>Создано:</strong> {{ ticket.created_at|date:"d.m.Y H:i" }}
                     </div>
                 </div>
                 

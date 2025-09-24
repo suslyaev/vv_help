@@ -22,6 +22,7 @@ class TicketForm(forms.ModelForm):
     # Поля для автокомплита (не модельные), реальные FK ставим во вьюхе из *_id
     category = forms.CharField(required=True, widget=forms.TextInput(attrs={'class': 'form-control autocomplete-field'}))
     client = forms.CharField(required=True, widget=forms.TextInput(attrs={'class': 'form-control autocomplete-field'}))
+    organization = forms.CharField(required=False, widget=forms.TextInput(attrs={'class': 'form-control autocomplete-field'}))
     assigned_to = forms.CharField(required=False, widget=forms.TextInput(attrs={'class': 'form-control autocomplete-field'}))
     attachments = MultipleFileField(
         required=False,
@@ -70,6 +71,13 @@ class TicketForm(forms.ModelForm):
             'data-autocomplete-min-length': '0',
             'class': 'form-control autocomplete-field',
             'placeholder': 'Начните вводить название клиента...'
+        })
+        
+        self.fields['organization'].widget.attrs.update({
+            'data-autocomplete-url': '/tickets/api/organizations/',
+            'data-autocomplete-min-length': '0',
+            'class': 'form-control autocomplete-field',
+            'placeholder': 'Начните вводить название организации...'
         })
         
         self.fields['assigned_to'].widget.attrs.update({

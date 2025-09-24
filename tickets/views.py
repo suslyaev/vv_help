@@ -220,6 +220,7 @@ def ticket_create(request):
             # Обрабатываем autocomplete поля
             category_id = request.POST.get('category_id')
             client_id = request.POST.get('client_id')
+            organization_id = request.POST.get('organization_id')
             assigned_to_text = (request.POST.get('assigned_to') or '').strip()
             assigned_to_id_raw = (request.POST.get('assigned_to_id') or '').strip()
             
@@ -233,6 +234,12 @@ def ticket_create(request):
                 try:
                     ticket.client = Client.objects.get(id=client_id)
                 except Client.DoesNotExist:
+                    pass
+            
+            if organization_id:
+                try:
+                    ticket.organization = Organization.objects.get(id=organization_id)
+                except Organization.DoesNotExist:
                     pass
             
             if not assigned_to_text:
@@ -308,6 +315,7 @@ def ticket_edit(request, ticket_id):
             # Обрабатываем autocomplete поля
             category_id = request.POST.get('category_id')
             client_id = request.POST.get('client_id')
+            organization_id = request.POST.get('organization_id')
             assigned_to_text = (request.POST.get('assigned_to') or '').strip()
             assigned_to_id_raw = (request.POST.get('assigned_to_id') or '').strip()
             
@@ -321,6 +329,12 @@ def ticket_edit(request, ticket_id):
                 try:
                     ticket.client = Client.objects.get(id=client_id)
                 except Client.DoesNotExist:
+                    pass
+            
+            if organization_id:
+                try:
+                    ticket.organization = Organization.objects.get(id=organization_id)
+                except Organization.DoesNotExist:
                     pass
             
             if not assigned_to_text:
@@ -743,12 +757,13 @@ def autocomplete_clients(request):
     query = request.GET.get('q', '')
     base_qs = Client.objects.filter(is_active=True)
     if len(query) >= 1:
+        # Используем iregex для регистронезависимого поиска в SQLite
         base_qs = base_qs.filter(
-            Q(name__icontains=query) |
-            Q(contact_person__icontains=query) |
-            Q(phone__icontains=query) |
-            Q(email__icontains=query) |
-            Q(organization__name__icontains=query)
+            Q(name__iregex=query) |
+            Q(contact_person__iregex=query) |
+            Q(phone__iregex=query) |
+            Q(email__iregex=query) |
+            Q(organization__name__iregex=query)
         )
     clients = base_qs.select_related('organization').order_by('name')[:10]
     
@@ -774,7 +789,8 @@ def autocomplete_organizations(request):
     query = request.GET.get('q', '')
     base_qs = Organization.objects.all()
     if len(query) >= 1:
-        base_qs = base_qs.filter(name__icontains=query)
+        # Используем iregex для регистронезависимого поиска в SQLite
+        base_qs = base_qs.filter(name__iregex=query)
     orgs = base_qs.order_by('name')[:10]
     results = [{'id': o.id, 'text': o.name} for o in orgs]
     return JsonResponse({'results': results})
