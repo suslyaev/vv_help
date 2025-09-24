@@ -17,6 +17,10 @@ urlpatterns = [
     path('tickets/<int:ticket_id>/waiting/', views.set_waiting, name='set_waiting'),
     path('tickets/<int:ticket_id>/return_to_work/', views.return_to_work, name='return_to_work'),
     path('tickets/<int:ticket_id>/close/', views.close_ticket, name='close_ticket'),
+    path('tickets/<int:ticket_id>/edit-resolution/', views.edit_resolution, name='edit_resolution'),
+    path('tickets/<int:ticket_id>/delete-resolution/', views.delete_resolution, name='delete_resolution'),
+    path('comments/<int:comment_id>/edit/', views.edit_comment, name='edit_comment'),
+    path('comments/<int:comment_id>/delete/', views.delete_comment, name='delete_comment'),
     
     # Вложения
     path('attachments/<int:attachment_id>/delete/', views.delete_attachment, name='delete_attachment'),
@@ -53,4 +57,6 @@ urlpatterns = [
     path('api/tickets/active/', views.get_active_tickets, name='get_active_tickets'),
     path('api/tickets/all/', views.get_all_tickets, name='get_all_tickets'),
     path('api/tickets/unresolved/', views.get_unresolved_tickets, name='get_unresolved_tickets'),
+    path('api/tickets/working/', views.get_working_tickets, name='get_working_tickets'),
+    path('api/tickets/waiting/', views.get_waiting_tickets, name='get_waiting_tickets'),
 ]

@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.db import transaction
 from asgiref.sync import sync_to_async
 
-from tickets.models import Ticket, Category, Client, TicketStatus, UserTelegramAccess, TelegramMessage, TelegramGroup
+from tickets.models import Ticket, Category, Client, TicketStatus, UserTelegramAccess, TelegramMessage, TelegramGroup, TicketComment
 from django.contrib.auth.models import User
 
 from telegram import Update
@@ -247,7 +247,8 @@ class Command(BaseCommand):
         if getattr(message, 'reply_to_message', None):
             reply_to_message_id = str(message.reply_to_message.message_id)
 
-        TelegramMessage.objects.create(
+        # Создаем сообщение в потоке
+        telegram_message = TelegramMessage.objects.create(
             message_id=str(message.message_id),
             reply_to_message_id=reply_to_message_id,
             chat_id=chat_id,
@@ -259,6 +260,73 @@ class Command(BaseCommand):
             media_type=media_type,
             message_date=(timezone.make_aware(message.date) if timezone.is_naive(message.date) else message.date),
         )
+
+        # Если это ответ на сообщение, проверяем, связано ли исходное сообщение с комментарием
+        if reply_to_message_id:
+            self._check_and_link_reply_to_comment(telegram_message, reply_to_message_id, chat_id)
+
+    def _check_and_link_reply_to_comment(self, telegram_message, reply_to_message_id: str, chat_id: str):
+        """Проверяет, является ли ответ на сообщение, связанное с комментарием, и если да - добавляет ответ как комментарий"""
+        try:
+            # Ищем исходное сообщение в потоке
+            original_message = TelegramMessage.objects.filter(
+                message_id=reply_to_message_id,
+                chat_id=chat_id
+            ).first()
+            
+            if not original_message:
+                return
+            
+            # Проверяем, связано ли исходное сообщение с обращением через комментарий
+            # Ищем комментарий, который имеет telegram_message_id равный ID исходного сообщения
+            original_comment = TicketComment.objects.filter(
+                telegram_message_id=reply_to_message_id
+            ).first()
+            
+            if not original_comment:
+                return
+            
+            # Если нашли комментарий, создаем новый комментарий для ответа
+            # Определяем автора комментария
+            author_type = 'client'
+            author_client = None
+            author_user = None
+            
+            # Пытаемся найти клиента по external_id
+            if telegram_message.from_user_id:
+                try:
+                    author_client = Client.objects.get(external_id=telegram_message.from_user_id)
+                except Client.DoesNotExist:
+                    # Если клиент не найден, создаем комментарий от неизвестного клиента
+                    author_client, _ = Client.objects.get_or_create(
+                        name='Неизвестный клиент',
+                        defaults={
+                            'external_id': telegram_message.from_user_id,
+                            'contact_person': telegram_message.from_fullname or telegram_message.from_username or 'Не указано'
+                        }
+                    )
+            
+            # Создаем новый комментарий
+            new_comment = TicketComment.objects.create(
+                ticket=original_comment.ticket,
+                author=author_user,
+                author_type=author_type,
+                author_client=author_client,
+                content=telegram_message.text,
+                is_internal=False,
+                telegram_message_id=telegram_message.message_id,
+                created_at=telegram_message.message_date
+            )
+            
+            # Обновляем сообщение в потоке, связывая его с обращением
+            telegram_message.linked_ticket = original_comment.ticket
+            telegram_message.linked_action = 'add_comment'
+            telegram_message.save()
+            
+            logging.info(f"Auto-linked reply to comment: message_id={telegram_message.message_id}, comment_id={new_comment.id}, ticket_id={original_comment.ticket.id}")
+            
+        except Exception as e:
+            logging.error(f"Failed to auto-link reply to comment: {e}", exc_info=True)
 
     def _should_log_to_stream(self, message) -> bool:
         """Определяет, нужно ли писать сообщение в поток.

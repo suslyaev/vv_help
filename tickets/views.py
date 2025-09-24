@@ -10,7 +10,7 @@ from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-from .models import Ticket, Category, Client, Organization, TicketStatus, TicketComment, TicketTemplate, TicketAudit, TicketAttachment, TelegramMessage, TelegramRoute
+from .models import Ticket, Category, Client, Organization, TicketStatus, TicketComment, TicketTemplate, TicketAudit, TicketAttachment, TelegramMessage, TelegramRoute, TelegramGroup
 from .forms import TicketForm, TicketCommentForm, ClientForm, TicketAttachmentForm, OrganizationForm
 
 
@@ -132,12 +132,16 @@ def ticket_detail(request, ticket_id):
     comments = ticket.comments.select_related('author', 'author_client').order_by('created_at')
     attachments = ticket.attachments.select_related('uploaded_by').order_by('-uploaded_at')
     
+    # Инициализируем формы
+    comment_form = TicketCommentForm()
+    attachment_form = TicketAttachmentForm()
+    
     if request.method == 'POST':
         # Проверяем, какой тип формы отправлен
         if 'comment' in request.POST:
-            form = TicketCommentForm(request.POST)
-            if form.is_valid():
-                comment = form.save(commit=False)
+            comment_form = TicketCommentForm(request.POST)
+            if comment_form.is_valid():
+                comment = comment_form.save(commit=False)
                 comment.ticket = ticket
                 
                 # Устанавливаем автора в зависимости от типа
@@ -161,6 +165,70 @@ def ticket_detail(request, ticket_id):
                 
                 comment.save()
                 
+                # Проверяем, нужно ли отправить комментарий в Telegram
+                reply_in_chat = request.POST.get('reply_in_chat') == '1'
+                if reply_in_chat and ticket.telegram_chat_id and ticket.external_message_id:
+                    try:
+                        import logging
+                        import asyncio
+                        from telegram.ext import Application
+                        from django.conf import settings
+                        
+                        logger = logging.getLogger(__name__)
+                        logger.info(f"Attempting to send Telegram comment from ticket detail: chat_id={ticket.telegram_chat_id}, message_id={ticket.external_message_id}")
+                        
+                        bot_token = getattr(settings, 'TELEGRAM_BOT_TOKEN', None)
+                        if bot_token:
+                            # Создаем асинхронную функцию для отправки комментария
+                            async def send_telegram_comment():
+                                application = Application.builder().token(bot_token).build()
+                                result = await application.bot.send_message(
+                                    chat_id=ticket.telegram_chat_id,
+                                    text=comment.content,
+                                    reply_to_message_id=int(ticket.external_message_id)
+                                )
+                                return result
+                            
+                            # Запускаем асинхронную функцию
+                            result = asyncio.run(send_telegram_comment())
+                            logger.info(f"Telegram comment sent successfully: {result.message_id}")
+                            
+                            # Сохраняем ID сообщения в комментарии
+                            comment.telegram_message_id = str(result.message_id)
+                            comment.save()
+                            
+                            # Добавляем отправленное сообщение в поток
+                            try:
+                                TelegramMessage.objects.create(
+                                    message_id=str(result.message_id),
+                                    chat_id=str(ticket.telegram_chat_id),
+                                    chat_title=ticket.telegram_chat_title or '',
+                                    from_user_id=str(request.user.id),
+                                    from_username=request.user.username,
+                                    from_fullname=request.user.get_full_name() or request.user.username,
+                                    text=comment.content,
+                                    message_date=timezone.now(),
+                                    created_at=timezone.now(),
+                                    linked_ticket=ticket,
+                                    linked_action='add_comment',
+                                    reply_to_message_id=str(ticket.external_message_id)
+                                )
+                                logger.info(f"Added comment message to stream: {result.message_id}")
+                            except Exception as stream_error:
+                                logger.error(f"Failed to add comment message to stream: {stream_error}", exc_info=True)
+                            
+                            messages.success(request, 'Комментарий добавлен и отправлен в Telegram')
+                        else:
+                            logger.error("TELEGRAM_BOT_TOKEN not configured")
+                            messages.success(request, 'Комментарий добавлен (Telegram бот не настроен)')
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Failed to send Telegram comment: {e}", exc_info=True)
+                        messages.success(request, 'Комментарий добавлен (не удалось отправить в Telegram)')
+                else:
+                    messages.success(request, 'Комментарий добавлен')
+                
                 # Создаем запись аудита
                 TicketAudit.objects.create(
                     ticket=ticket,
@@ -169,8 +237,114 @@ def ticket_detail(request, ticket_id):
                     comment=f'Добавлен комментарий: {comment.content[:50]}...'
                 )
                 
-                messages.success(request, 'Комментарий добавлен')
                 return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+            else:
+                # Форма невалидна, показываем ошибки
+                pass
+        elif request.POST.get('action') == 'reply_to_comment':
+            # Обработка ответа на комментарий
+            comment_id = request.POST.get('comment_id')
+            reply_content = request.POST.get('reply_content', '')
+            is_internal_reply = request.POST.get('is_internal_reply') == 'on'
+            send_to_telegram = request.POST.get('send_to_telegram') == 'on'
+            
+            if not comment_id or not comment_id.isdigit():
+                messages.error(request, 'Неверный ID комментария')
+                return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+            
+            if not reply_content.strip():
+                messages.error(request, 'Введите текст ответа')
+                return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+            
+            try:
+                original_comment = TicketComment.objects.get(id=int(comment_id), ticket=ticket)
+            except TicketComment.DoesNotExist:
+                messages.error(request, 'Комментарий не найден')
+                return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+            
+            # Создаем новый комментарий
+            reply_comment = TicketComment.objects.create(
+                ticket=ticket,
+                author=request.user,
+                author_type='user',
+                author_client=None,
+                content=reply_content,
+                is_internal=is_internal_reply,
+                created_at=timezone.now()
+            )
+            
+            # Если запрошена отправка в Telegram
+            if send_to_telegram and original_comment.telegram_message_id and ticket.telegram_chat_id:
+                try:
+                    import logging
+                    import asyncio
+                    from telegram.ext import Application
+                    from django.conf import settings
+                    
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"Attempting to send Telegram reply: chat_id={ticket.telegram_chat_id}, reply_to_message_id={original_comment.telegram_message_id}")
+                    
+                    bot_token = getattr(settings, 'TELEGRAM_BOT_TOKEN', None)
+                    if bot_token:
+                        # Создаем асинхронную функцию для отправки ответа
+                        async def send_telegram_reply():
+                            application = Application.builder().token(bot_token).build()
+                            result = await application.bot.send_message(
+                                chat_id=ticket.telegram_chat_id,
+                                text=reply_content,
+                                reply_to_message_id=int(original_comment.telegram_message_id)
+                            )
+                            return result
+                        
+                        # Запускаем асинхронную функцию
+                        result = asyncio.run(send_telegram_reply())
+                        logger.info(f"Telegram reply sent successfully: {result.message_id}")
+                        
+                        # Сохраняем ID сообщения в комментарии
+                        reply_comment.telegram_message_id = str(result.message_id)
+                        reply_comment.save()
+                        
+                        # Добавляем отправленное сообщение в поток
+                        try:
+                            TelegramMessage.objects.create(
+                                message_id=str(result.message_id),
+                                chat_id=str(ticket.telegram_chat_id),
+                                chat_title=ticket.telegram_chat_title or '',
+                                from_user_id=str(request.user.id),
+                                from_username=request.user.username,
+                                from_fullname=request.user.get_full_name() or request.user.username,
+                                text=reply_content,
+                                message_date=timezone.now(),
+                                created_at=timezone.now(),
+                                linked_ticket=ticket,
+                                linked_action='add_comment',
+                                reply_to_message_id=str(original_comment.telegram_message_id)
+                            )
+                            logger.info(f"Added reply message to stream: {result.message_id}")
+                        except Exception as stream_error:
+                            logger.error(f"Failed to add reply message to stream: {stream_error}", exc_info=True)
+                        
+                        messages.success(request, 'Ответ добавлен и отправлен в Telegram')
+                    else:
+                        logger.error("TELEGRAM_BOT_TOKEN not configured")
+                        messages.success(request, 'Ответ добавлен (Telegram бот не настроен)')
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to send Telegram reply: {e}", exc_info=True)
+                    messages.success(request, 'Ответ добавлен (не удалось отправить в Telegram)')
+            else:
+                messages.success(request, 'Ответ добавлен')
+            
+            # Создаем запись аудита
+            TicketAudit.objects.create(
+                ticket=ticket,
+                action='comment_reply_added',
+                user=request.user,
+                comment=f'Добавлен ответ на комментарий: {reply_content[:50]}...'
+            )
+            
+            return redirect('tickets:ticket_detail', ticket_id=ticket.id)
         elif 'attachment' in request.FILES:
             form = TicketAttachmentForm(request.POST, request.FILES)
             if form.is_valid():
@@ -198,19 +372,439 @@ def ticket_detail(request, ticket_id):
                 
                 messages.success(request, f'Загружено {uploaded_count} файлов')
                 return redirect('tickets:ticket_detail', ticket_id=ticket.id)
-    else:
-        comment_form = TicketCommentForm()
-        attachment_form = TicketAttachmentForm()
+    
+    # Проверяем, можно ли отправлять комментарии в Telegram
+    can_reply_in_telegram = False
+    if ticket.telegram_chat_id and ticket.external_message_id:
+        try:
+            telegram_group = TelegramGroup.objects.get(chat_id=ticket.telegram_chat_id)
+            can_reply_in_telegram = not telegram_group.is_blocked
+        except TelegramGroup.DoesNotExist:
+            can_reply_in_telegram = False
+    
+    # Обогащаем комментарии дополнительной информацией
+    enriched_comments = []
+    
+    for comment in comments:
+        comment_data = {
+            'comment': comment,
+            'is_reply': False,
+            'reply_info': None,
+            'from_bot': False
+        }
+        
+        if comment.telegram_message_id:
+            # Проверяем, является ли комментарий ответом
+            telegram_msg = TelegramMessage.objects.filter(
+                message_id=comment.telegram_message_id,
+                chat_id=ticket.telegram_chat_id
+            ).first()
+            
+            if telegram_msg and telegram_msg.reply_to_message_id:
+                # Ищем исходное сообщение для отображения цитаты
+                original_msg = TelegramMessage.objects.filter(
+                    message_id=telegram_msg.reply_to_message_id,
+                    chat_id=ticket.telegram_chat_id
+                ).first()
+                if original_msg:
+                    comment_data['is_reply'] = True
+                    comment_data['reply_info'] = {
+                        'original_text': original_msg.text,
+                        'original_author': original_msg.from_fullname or original_msg.from_username or 'Неизвестный'
+                    }
+            
+            # Проверяем, отправлен ли комментарий ботом (от пользователя системы)
+            from_bot = False
+            if comment.author_type == 'user' and comment.telegram_message_id and comment.author:
+                # Дополнительно проверяем, что в Telegram сообщении from_user_id соответствует текущему пользователю
+                telegram_msg = TelegramMessage.objects.filter(
+                    message_id=comment.telegram_message_id,
+                    chat_id=ticket.telegram_chat_id
+                ).first()
+                
+                if telegram_msg and telegram_msg.from_user_id == str(request.user.id):
+                    from_bot = True
+            
+            comment_data['from_bot'] = from_bot
+        
+        enriched_comments.append(comment_data)
     
     context = {
         'ticket': ticket,
         'comments': comments,
+        'enriched_comments': enriched_comments,
         'attachments': attachments,
         'comment_form': comment_form,
         'attachment_form': attachment_form,
+        'can_reply_in_telegram': can_reply_in_telegram,
     }
     
     return render(request, 'tickets/ticket_detail.html', context)
+
+
+@login_required
+def edit_comment(request, comment_id):
+    """Редактировать комментарий"""
+    comment = get_object_or_404(TicketComment, id=comment_id)
+    ticket = comment.ticket
+    
+    # Проверяем, что комментарий был отправлен в Telegram
+    if not comment.telegram_message_id:
+        messages.error(request, 'Редактирование недоступно для данного комментария')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    # Проверяем, что обращение имеет Telegram данные
+    if not ticket.telegram_chat_id or not ticket.external_message_id:
+        messages.error(request, 'Редактирование недоступно для данного обращения')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    # Проверяем, что группа разрешена для отправки ответов
+    can_reply_in_telegram = False
+    try:
+        telegram_group = TelegramGroup.objects.get(chat_id=ticket.telegram_chat_id)
+        can_reply_in_telegram = not telegram_group.is_blocked
+    except TelegramGroup.DoesNotExist:
+        can_reply_in_telegram = False
+    
+    if not can_reply_in_telegram:
+        messages.error(request, 'Редактирование недоступно для данной группы')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    if request.method == 'POST':
+        new_content = request.POST.get('content', '')
+        update_in_chat = request.POST.get('update_in_chat') == '1'
+        
+        if not new_content:
+            messages.error(request, 'Содержание комментария не может быть пустым')
+            return redirect('tickets:edit_comment', comment_id=comment.id)
+        
+        # Обновляем комментарий
+        comment.content = new_content
+        comment.save()
+        
+        # Создаем запись аудита
+        TicketAudit.objects.create(
+            ticket=ticket,
+            action='comment_edited',
+            user=request.user,
+            comment=f'Комментарий отредактирован: {new_content[:50]}...'
+        )
+        
+        # Если запрошено обновление в Telegram
+        if update_in_chat:
+            try:
+                import logging
+                import asyncio
+                from telegram.ext import Application
+                from django.conf import settings
+                
+                logger = logging.getLogger(__name__)
+                logger.info(f"Attempting to edit Telegram comment: chat_id={ticket.telegram_chat_id}, message_id={comment.telegram_message_id}")
+                
+                bot_token = getattr(settings, 'TELEGRAM_BOT_TOKEN', None)
+                if bot_token:
+                    # Создаем асинхронную функцию для редактирования сообщения
+                    async def edit_telegram_comment():
+                        application = Application.builder().token(bot_token).build()
+                        try:
+                            # Пытаемся отредактировать существующее сообщение
+                            result = await application.bot.edit_message_text(
+                                chat_id=ticket.telegram_chat_id,
+                                message_id=int(comment.telegram_message_id),
+                                text=new_content
+                            )
+                            return result, 'edited'
+                        except Exception as edit_error:
+                            # Если не удалось отредактировать, отправляем новое сообщение как ответ
+                            logger.warning(f"Could not edit comment, sending new one: {edit_error}")
+                            result = await application.bot.send_message(
+                                chat_id=ticket.telegram_chat_id,
+                                text=new_content,
+                                reply_to_message_id=int(ticket.external_message_id)
+                            )
+                            return result, 'new'
+                    
+                    # Запускаем асинхронную функцию
+                    result, action_type = asyncio.run(edit_telegram_comment())
+                    logger.info(f"Telegram comment {action_type} successfully: {result.message_id}")
+                    
+                    # Обновляем сообщение в потоке
+                    try:
+                        if action_type == 'edited':
+                            # Обновляем существующее сообщение
+                            telegram_message = TelegramMessage.objects.filter(
+                                chat_id=ticket.telegram_chat_id,
+                                message_id=comment.telegram_message_id,
+                                linked_ticket=ticket,
+                                linked_action='add_comment'
+                            ).first()
+                            
+                            if telegram_message:
+                                telegram_message.text = new_content
+                                telegram_message.save()
+                                logger.info(f"Updated comment message in stream: {telegram_message.id}")
+                        else:
+                            # Обновляем ID сообщения в комментарии
+                            comment.telegram_message_id = str(result.message_id)
+                            comment.save()
+                            
+                            # Добавляем новое сообщение в поток
+                            TelegramMessage.objects.create(
+                                message_id=str(result.message_id),
+                                chat_id=str(ticket.telegram_chat_id),
+                                chat_title=ticket.telegram_chat_title or '',
+                                from_user_id=str(request.user.id),
+                                from_username=request.user.username,
+                                from_fullname=request.user.get_full_name() or request.user.username,
+                                text=new_content,
+                                message_date=timezone.now(),
+                                created_at=timezone.now(),
+                                linked_ticket=ticket,
+                                linked_action='add_comment',
+                                reply_to_message_id=str(ticket.external_message_id)
+                            )
+                            logger.info(f"Added new comment message to stream: {result.message_id}")
+                    except Exception as stream_error:
+                        logger.error(f"Failed to update comment message in stream: {stream_error}", exc_info=True)
+                    
+                    messages.success(request, 'Комментарий обновлен и отправлен в Telegram')
+                else:
+                    logger.error("TELEGRAM_BOT_TOKEN not configured")
+                    messages.warning(request, 'Telegram бот не настроен')
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to edit Telegram comment: {e}", exc_info=True)
+                messages.warning(request, f'Не удалось обновить сообщение в Telegram: {str(e)}')
+        else:
+            messages.success(request, 'Комментарий обновлен')
+        
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    # Показываем форму редактирования
+    context = {
+        'comment': comment,
+        'ticket': ticket,
+        'can_reply_in_telegram': can_reply_in_telegram,
+    }
+    
+    return render(request, 'tickets/ticket_edit_comment.html', context)
+
+
+@login_required
+def delete_comment(request, comment_id):
+    """Удалить комментарий"""
+    comment = get_object_or_404(TicketComment, id=comment_id)
+    ticket = comment.ticket
+    
+    # Проверяем, что комментарий был отправлен в Telegram
+    if not comment.telegram_message_id:
+        messages.error(request, 'Удаление недоступно для данного комментария')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    # Проверяем, что обращение имеет Telegram данные
+    if not ticket.telegram_chat_id or not ticket.external_message_id:
+        messages.error(request, 'Удаление недоступно для данного обращения')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    # Проверяем, что группа разрешена для отправки ответов
+    can_reply_in_telegram = False
+    try:
+        telegram_group = TelegramGroup.objects.get(chat_id=ticket.telegram_chat_id)
+        can_reply_in_telegram = not telegram_group.is_blocked
+    except TelegramGroup.DoesNotExist:
+        can_reply_in_telegram = False
+    
+    if not can_reply_in_telegram:
+        messages.error(request, 'Удаление недоступно для данной группы')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    # Проверяем, что комментарий отправлен ботом (от пользователя системы)
+    if comment.author_type != 'user':
+        messages.error(request, 'Удаление недоступно для комментариев клиентов')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    if request.method == 'POST':
+        try:
+            import logging
+            import asyncio
+            from telegram.ext import Application
+            from django.conf import settings
+            
+            logger = logging.getLogger(__name__)
+            logger.info(f"Attempting to delete Telegram comment: chat_id={ticket.telegram_chat_id}, message_id={comment.telegram_message_id}")
+            
+            bot_token = getattr(settings, 'TELEGRAM_BOT_TOKEN', None)
+            if bot_token:
+                # Создаем асинхронную функцию для удаления сообщения
+                async def delete_telegram_message():
+                    application = Application.builder().token(bot_token).build()
+                    result = await application.bot.delete_message(
+                        chat_id=ticket.telegram_chat_id,
+                        message_id=int(comment.telegram_message_id)
+                    )
+                    return result
+                
+                # Запускаем асинхронную функцию
+                result = asyncio.run(delete_telegram_message())
+                logger.info(f"Telegram message deleted successfully: {comment.telegram_message_id}")
+                
+                # Удаляем сообщение из потока
+                try:
+                    telegram_message = TelegramMessage.objects.filter(
+                        message_id=comment.telegram_message_id,
+                        chat_id=ticket.telegram_chat_id
+                    ).delete()
+                    logger.info(f"Deleted message from stream: {comment.telegram_message_id}")
+                except Exception as stream_error:
+                    logger.error(f"Failed to delete message from stream: {stream_error}", exc_info=True)
+                
+                # Создаем запись аудита
+                TicketAudit.objects.create(
+                    ticket=ticket,
+                    action='comment_deleted',
+                    user=request.user,
+                    comment=f'Комментарий удален: {comment.content[:50]}...'
+                )
+                
+                # Удаляем комментарий
+                comment.delete()
+                
+                messages.success(request, 'Комментарий удален из Telegram и потока')
+            else:
+                logger.error("TELEGRAM_BOT_TOKEN not configured")
+                
+                # Удаляем только комментарий и сообщение из потока
+                TelegramMessage.objects.filter(
+                    message_id=comment.telegram_message_id,
+                    chat_id=ticket.telegram_chat_id
+                ).delete()
+                comment.delete()
+                
+                messages.warning(request, 'Комментарий удален (Telegram бот не настроен)')
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to delete Telegram comment: {e}", exc_info=True)
+            messages.warning(request, f'Не удалось удалить сообщение из Telegram: {str(e)}')
+        
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    # Показываем форму подтверждения удаления
+    context = {
+        'comment': comment,
+        'ticket': ticket,
+    }
+    
+    return render(request, 'tickets/ticket_delete_comment.html', context)
+
+
+@login_required
+def delete_resolution(request, ticket_id):
+    """Удалить решение обращения"""
+    ticket = get_object_or_404(Ticket, id=ticket_id)
+    
+    # Проверяем, что обращение решено и имеет Telegram данные
+    if not ticket.status.is_final or not ticket.telegram_chat_id or not ticket.external_message_id:
+        messages.error(request, 'Удаление решения недоступно для данного обращения')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    # Проверяем, что группа разрешена для отправки ответов
+    can_reply_in_telegram = False
+    try:
+        telegram_group = TelegramGroup.objects.get(chat_id=ticket.telegram_chat_id)
+        can_reply_in_telegram = not telegram_group.is_blocked
+    except TelegramGroup.DoesNotExist:
+        can_reply_in_telegram = False
+    
+    if not can_reply_in_telegram:
+        messages.error(request, 'Удаление решения недоступно для данной группы')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    if request.method == 'POST':
+        try:
+            import logging
+            import asyncio
+            from telegram.ext import Application
+            from django.conf import settings
+            
+            logger = logging.getLogger(__name__)
+            logger.info(f"Attempting to delete Telegram resolution: chat_id={ticket.telegram_chat_id}, message_id={ticket.external_message_id}")
+            
+            bot_token = getattr(settings, 'TELEGRAM_BOT_TOKEN', None)
+            if bot_token:
+                # Создаем асинхронную функцию для удаления сообщения
+                async def delete_telegram_message():
+                    application = Application.builder().token(bot_token).build()
+                    result = await application.bot.delete_message(
+                        chat_id=ticket.telegram_chat_id,
+                        message_id=int(ticket.external_message_id)
+                    )
+                    return result
+                
+                # Запускаем асинхронную функцию
+                result = asyncio.run(delete_telegram_message())
+                logger.info(f"Telegram message deleted successfully: {ticket.external_message_id}")
+                
+                # Удаляем сообщение из потока
+                try:
+                    telegram_message = TelegramMessage.objects.filter(
+                        message_id=ticket.external_message_id,
+                        chat_id=ticket.telegram_chat_id,
+                        linked_ticket=ticket,
+                        linked_action='resolve_ticket'
+                    ).delete()
+                    logger.info(f"Deleted resolution message from stream: {ticket.external_message_id}")
+                except Exception as stream_error:
+                    logger.error(f"Failed to delete resolution message from stream: {stream_error}", exc_info=True)
+                
+                # Создаем запись аудита
+                TicketAudit.objects.create(
+                    ticket=ticket,
+                    action='resolution_deleted',
+                    user=request.user,
+                    comment=f'Решение удалено: {ticket.resolution[:50]}...'
+                )
+                
+                # Очищаем решение и меняем статус
+                ticket.resolution = ''
+                ticket.resolved_at = None
+                ticket.status = TicketStatus.objects.get(name='В работе')  # Возвращаем в работу
+                ticket.save()
+                
+                messages.success(request, 'Решение удалено из Telegram и потока')
+            else:
+                logger.error("TELEGRAM_BOT_TOKEN not configured")
+                
+                # Удаляем только сообщение из потока и очищаем решение
+                TelegramMessage.objects.filter(
+                    message_id=ticket.external_message_id,
+                    chat_id=ticket.telegram_chat_id,
+                    linked_ticket=ticket,
+                    linked_action='resolve_ticket'
+                ).delete()
+                
+                ticket.resolution = ''
+                ticket.resolved_at = None
+                ticket.status = TicketStatus.objects.get(name='В работе')
+                ticket.save()
+                
+                messages.warning(request, 'Решение удалено (Telegram бот не настроен)')
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to delete Telegram resolution: {e}", exc_info=True)
+            messages.warning(request, f'Не удалось удалить сообщение из Telegram: {str(e)}')
+        
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    # Показываем форму подтверждения удаления
+    context = {
+        'ticket': ticket,
+        'can_reply_in_telegram': can_reply_in_telegram,
+    }
+    
+    return render(request, 'tickets/ticket_delete_resolution.html', context)
 
 
 @login_required
@@ -504,6 +1098,31 @@ def resolve_ticket(request, ticket_id):
                     # Запускаем асинхронную функцию
                     result = asyncio.run(send_telegram_message())
                     logger.info(f"Telegram message sent successfully: {result.message_id}")
+                    
+                    # Добавляем отправленное сообщение в поток
+                    try:
+                        from tickets.models import TelegramMessage
+                        from django.contrib.auth.models import User
+                        
+                        # Создаем запись в потоке о том, что обращение решено
+                        TelegramMessage.objects.create(
+                            message_id=str(result.message_id),
+                            chat_id=str(ticket.telegram_chat_id),
+                            chat_title=ticket.telegram_chat_title or '',
+                            from_user_id=str(request.user.id),
+                            from_username=request.user.username,
+                            from_fullname=request.user.get_full_name() or request.user.username,
+                            text=resolution,
+                            message_date=timezone.now(),
+                            created_at=timezone.now(),
+                            linked_ticket=ticket,
+                            linked_action='resolve_ticket',
+                            reply_to_message_id=str(ticket.external_message_id)
+                        )
+                        logger.info(f"Added resolution message to stream: {result.message_id}")
+                    except Exception as stream_error:
+                        logger.error(f"Failed to add resolution message to stream: {stream_error}", exc_info=True)
+                    
                     messages.success(request, 'Ответ отправлен в Telegram')
                 else:
                     logger.error("TELEGRAM_BOT_TOKEN not configured")
@@ -523,12 +1142,162 @@ def resolve_ticket(request, ticket_id):
         is_active=True
     )
     
+    # Проверяем, можно ли отправлять ответ в Telegram
+    can_reply_in_telegram = False
+    if ticket.telegram_chat_id and ticket.external_message_id:
+        # Проверяем, есть ли группа в нашей модели и не заблокирована ли она
+        try:
+            telegram_group = TelegramGroup.objects.get(chat_id=ticket.telegram_chat_id)
+            can_reply_in_telegram = not telegram_group.is_blocked
+        except TelegramGroup.DoesNotExist:
+            # Если группы нет в нашей модели, не показываем галку
+            can_reply_in_telegram = False
+    
     context = {
         'ticket': ticket,
         'templates': templates,
+        'can_reply_in_telegram': can_reply_in_telegram,
     }
     
     return render(request, 'tickets/ticket_resolve.html', context)
+
+
+@login_required
+def edit_resolution(request, ticket_id):
+    """Редактировать решение обращения"""
+    ticket = get_object_or_404(Ticket, id=ticket_id)
+    
+    # Проверяем, что обращение решено и имеет Telegram данные
+    if not ticket.status.is_final or not ticket.telegram_chat_id or not ticket.external_message_id:
+        messages.error(request, 'Редактирование решения недоступно для данного обращения')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    # Проверяем, что группа разрешена для отправки ответов
+    can_reply_in_telegram = False
+    try:
+        telegram_group = TelegramGroup.objects.get(chat_id=ticket.telegram_chat_id)
+        can_reply_in_telegram = not telegram_group.is_blocked
+    except TelegramGroup.DoesNotExist:
+        can_reply_in_telegram = False
+    
+    if not can_reply_in_telegram:
+        messages.error(request, 'Редактирование решения недоступно для данной группы')
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    if request.method == 'POST':
+        new_resolution = request.POST.get('resolution', '')
+        reply_in_chat = request.POST.get('reply_in_chat') == '1'
+        
+        if not new_resolution:
+            messages.error(request, 'Решение не может быть пустым')
+            return redirect('tickets:edit_resolution', ticket_id=ticket.id)
+        
+        # Обновляем решение
+        ticket.resolution = new_resolution
+        ticket.save()
+        
+        # Создаем запись аудита
+        TicketAudit.objects.create(
+            ticket=ticket,
+            action='resolution_edited',
+            user=request.user,
+            comment=f'Решение отредактировано: {new_resolution[:50]}...'
+        )
+        
+        # Если запрошена отправка в Telegram, обновляем сообщение
+        if reply_in_chat:
+            try:
+                import logging
+                import asyncio
+                from telegram.ext import Application
+                from django.conf import settings
+                
+                logger = logging.getLogger(__name__)
+                logger.info(f"Attempting to edit Telegram message: chat_id={ticket.telegram_chat_id}, message_id={ticket.external_message_id}")
+                
+                bot_token = getattr(settings, 'TELEGRAM_BOT_TOKEN', None)
+                if bot_token:
+                    # Создаем асинхронную функцию для редактирования сообщения
+                    async def edit_telegram_message():
+                        application = Application.builder().token(bot_token).build()
+                        try:
+                            # Пытаемся отредактировать существующее сообщение
+                            result = await application.bot.edit_message_text(
+                                chat_id=ticket.telegram_chat_id,
+                                message_id=int(ticket.external_message_id),
+                                text=new_resolution
+                            )
+                            return result, 'edited'
+                        except Exception as edit_error:
+                            # Если не удалось отредактировать, отправляем новое сообщение как ответ
+                            logger.warning(f"Could not edit message, sending new one: {edit_error}")
+                            result = await application.bot.send_message(
+                                chat_id=ticket.telegram_chat_id,
+                                text=new_resolution,
+                                reply_to_message_id=int(ticket.external_message_id)
+                            )
+                            return result, 'new'
+                    
+                    # Запускаем асинхронную функцию
+                    result, action_type = asyncio.run(edit_telegram_message())
+                    logger.info(f"Telegram message {action_type} successfully: {result.message_id}")
+                    
+                    # Обновляем сообщение в потоке
+                    try:
+                        if action_type == 'edited':
+                            # Обновляем существующее сообщение
+                            telegram_message = TelegramMessage.objects.filter(
+                                chat_id=ticket.telegram_chat_id,
+                                message_id=ticket.external_message_id,
+                                linked_ticket=ticket,
+                                linked_action='resolve_ticket'
+                            ).first()
+                            
+                            if telegram_message:
+                                telegram_message.text = new_resolution
+                                telegram_message.save()
+                                logger.info(f"Updated resolution message in stream: {telegram_message.id}")
+                        else:
+                            # Добавляем новое сообщение в поток
+                            TelegramMessage.objects.create(
+                                message_id=str(result.message_id),
+                                chat_id=str(ticket.telegram_chat_id),
+                                chat_title=ticket.telegram_chat_title or '',
+                                from_user_id=str(request.user.id),
+                                from_username=request.user.username,
+                                from_fullname=request.user.get_full_name() or request.user.username,
+                                text=new_resolution,
+                                message_date=timezone.now(),
+                                created_at=timezone.now(),
+                                linked_ticket=ticket,
+                                linked_action='resolve_ticket',
+                                reply_to_message_id=str(ticket.external_message_id)
+                            )
+                            logger.info(f"Added new resolution message to stream: {result.message_id}")
+                    except Exception as stream_error:
+                        logger.error(f"Failed to update resolution message in stream: {stream_error}", exc_info=True)
+                    
+                    messages.success(request, 'Решение обновлено и отправлено в Telegram')
+                else:
+                    logger.error("TELEGRAM_BOT_TOKEN not configured")
+                    messages.warning(request, 'Telegram бот не настроен')
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to edit Telegram message: {e}", exc_info=True)
+                messages.warning(request, f'Не удалось обновить сообщение в Telegram: {str(e)}')
+        else:
+            messages.success(request, 'Решение обновлено')
+        
+        return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+    
+    # Показываем форму редактирования
+    context = {
+        'ticket': ticket,
+        'can_reply_in_telegram': can_reply_in_telegram,
+    }
+    
+    return render(request, 'tickets/ticket_edit_resolution.html', context)
 
 
 @login_required
@@ -1103,7 +1872,7 @@ def analytics_export_xlsx(request):
 
     from datetime import datetime
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    
+
     resp = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     resp['Content-Disposition'] = f'attachment; filename="analytics_export_{timestamp}.xlsx"'
     wb.save(resp)
@@ -1281,10 +2050,18 @@ def stream(request):
     if request.method == 'POST' and request.POST.get('action') == 'add_comment':
         msg_id = request.POST.get('message_id')
         ticket_id = request.POST.get('ticket_id')
+        comment_text = request.POST.get('comment_text', '')
         is_internal = request.POST.get('is_internal') == 'on'
+        reply_in_chat = request.POST.get('reply_in_chat') == '1'
+        
         if not ticket_id or not ticket_id.isdigit():
             messages.error(request, 'Укажите корректный ID тикета')
             return redirect('tickets:stream')
+        
+        if not comment_text:
+            messages.error(request, 'Введите текст комментария')
+            return redirect('tickets:stream')
+            
         msg = get_object_or_404(TelegramMessage, id=msg_id)
         ticket = get_object_or_404(Ticket, id=int(ticket_id))
 
@@ -1313,12 +2090,11 @@ def stream(request):
 
         comment = TicketComment(
             ticket=ticket,
-            content=msg.text or '',
+            content=comment_text,
             is_internal=is_internal,
-            created_at=msg.message_date,
-            author_type=author_type,
-            author=author,
-            author_client=author_client,
+            created_at=timezone.now(),
+            author_type='user',
+            author=request.user,
         )
         comment.save()
 
@@ -1328,14 +2104,72 @@ def stream(request):
         msg.processed_at = timezone.now()
         msg.save()
 
+        # Если запрошена отправка в Telegram
+        if reply_in_chat and ticket.telegram_chat_id and ticket.external_message_id:
+            try:
+                import logging
+                import asyncio
+                from telegram.ext import Application
+                from django.conf import settings
+                
+                logger = logging.getLogger(__name__)
+                logger.info(f"Attempting to send Telegram comment: chat_id={ticket.telegram_chat_id}, message_id={msg.message_id}")
+                
+                bot_token = getattr(settings, 'TELEGRAM_BOT_TOKEN', None)
+                if bot_token:
+                    # Создаем асинхронную функцию для отправки комментария
+                    async def send_telegram_comment():
+                        application = Application.builder().token(bot_token).build()
+                        result = await application.bot.send_message(
+                            chat_id=ticket.telegram_chat_id,
+                            text=comment_text,
+                            reply_to_message_id=int(msg.message_id)
+                        )
+                        return result
+                    
+                    # Запускаем асинхронную функцию
+                    result = asyncio.run(send_telegram_comment())
+                    logger.info(f"Telegram comment sent successfully: {result.message_id}")
+                    
+                    # Добавляем отправленное сообщение в поток
+                    try:
+                        TelegramMessage.objects.create(
+                            message_id=str(result.message_id),
+                            chat_id=str(ticket.telegram_chat_id),
+                            chat_title=ticket.telegram_chat_title or '',
+                            from_user_id=str(request.user.id),
+                            from_username=request.user.username,
+                            from_fullname=request.user.get_full_name() or request.user.username,
+                            text=comment_text,
+                            message_date=timezone.now(),
+                            created_at=timezone.now(),
+                            linked_ticket=ticket,
+                            linked_action='add_comment',
+                            reply_to_message_id=str(msg.message_id)
+                        )
+                        logger.info(f"Added comment message to stream: {result.message_id}")
+                    except Exception as stream_error:
+                        logger.error(f"Failed to add comment message to stream: {stream_error}", exc_info=True)
+                    
+                    messages.success(request, mark_safe(f'Комментарий добавлен и отправлен в Telegram в обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a>'))
+                else:
+                    logger.error("TELEGRAM_BOT_TOKEN not configured")
+                    messages.success(request, mark_safe(f'Комментарий добавлен в обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a> (Telegram бот не настроен)'))
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to send Telegram comment: {e}", exc_info=True)
+                messages.success(request, mark_safe(f'Комментарий добавлен в обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a> (не удалось отправить в Telegram)'))
+        else:
+            messages.success(request, mark_safe(f'Комментарий добавлен в обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a>'))
+
         TicketAudit.objects.create(
             ticket=ticket,
             action='comment_added',
             user=request.user,
-            comment=f'Комментарий из потока: {comment.content[:50]}...'
+            comment=f'Комментарий добавлен: {comment.content[:50]}...'
         )
 
-        messages.success(request, mark_safe(f'Комментарий добавлен в обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a>'))
         return redirect('tickets:stream')
 
     # Массовый комментарий по выбранным сообщениям
@@ -1378,6 +2212,7 @@ def stream(request):
                 author_type=author_type,
                 author=author,
                 author_client=author_client,
+                telegram_message_id=msg.message_id,  # Сохраняем ID сообщения для связи
             )
             
             # Обновляем сообщение в потоке
@@ -1449,13 +2284,14 @@ def stream(request):
         reply_messages = TelegramMessage.objects.filter(
             message_id__in=reply_to_ids,
             chat_id__in={m.chat_id for m in page_obj.object_list}
-        ).values('message_id', 'chat_id', 'text', 'from_username', 'from_fullname')
+        ).values('message_id', 'chat_id', 'text', 'from_username', 'from_fullname', 'from_user_id')
         
         for reply in reply_messages:
             key = f"{reply['chat_id']}_{reply['message_id']}"
             reply_messages_map[key] = {
                 'text': reply['text'],
-                'author': reply['from_username'] or reply['from_fullname'] or 'Неизвестный'
+                'author': reply['from_username'] or reply['from_fullname'] or 'Неизвестный',
+                'from_user_id': reply['from_user_id']
             }
 
     # Получаем название группы для отображения в фильтре
@@ -1508,6 +2344,176 @@ def stream(request):
         'active_routes': active_routes,
         'clients_map_json': {str(k): {'id': v.id, 'name': v.name} for k, v in clients_map.items()},
     }
+
+    # Действие: перевести обращение в работу
+    if request.method == 'POST' and request.POST.get('action') == 'set_working':
+        msg_id = request.POST.get('message_id')
+        ticket_id = request.POST.get('ticket_id')
+        comment = request.POST.get('comment', '')
+        is_internal = request.POST.get('is_internal_working') == 'on'
+        
+        if not ticket_id or not ticket_id.isdigit():
+            messages.error(request, 'Укажите корректный ID обращения')
+            return redirect('tickets:stream')
+        
+        try:
+            ticket = Ticket.objects.get(id=int(ticket_id))
+            msg = get_object_or_404(TelegramMessage, id=msg_id)
+        except Ticket.DoesNotExist:
+            messages.error(request, 'Обращение не найдено')
+            return redirect('tickets:stream')
+        
+        # Проверяем, что статус можно изменить на "В работе"
+        working_statuses = ['Новое', 'Ожидает ответа', 'Решено']
+        if ticket.status.name not in working_statuses:
+            messages.error(request, f'Нельзя перевести в работу обращение со статусом "{ticket.status.name}"')
+            return redirect('tickets:stream')
+        
+        # Получаем статус "В работе"
+        try:
+            working_status = TicketStatus.objects.get(name='В работе')
+        except TicketStatus.DoesNotExist:
+            messages.error(request, 'Статус "В работе" не найден в системе')
+            return redirect('tickets:stream')
+        
+        # Меняем статус
+        old_status = ticket.status
+        ticket.status = working_status
+        ticket.assigned_to = request.user
+        
+        # Устанавливаем время взятия в работу, если еще не установлено
+        if not ticket.taken_at:
+            ticket.taken_at = timezone.now()
+        
+        ticket.save()
+        
+        # Создаем комментарий с пользовательским текстом (если есть)
+        if comment:
+            TicketComment.objects.create(
+                ticket=ticket,
+                author=request.user,
+                author_type='user',
+                content=comment,
+                is_internal=is_internal,
+                telegram_message_id=msg.message_id,
+                created_at=timezone.now()
+            )
+        
+        # Создаем внутренний комментарий о смене статуса
+        TicketComment.objects.create(
+            ticket=ticket,
+            author=request.user,
+            author_type='user',
+            content=f'Статус изменен с "{old_status.name}" на "В работу"',
+            is_internal=True,  # Всегда внутренний
+            telegram_message_id=None,  # Не связываем с Telegram сообщением
+            created_at=msg.message_date  # Используем время сообщения из потока
+        )
+        
+        # Обновляем сообщение в потоке
+        msg.linked_ticket = ticket
+        msg.linked_action = 'set_working'
+        msg.processed_at = timezone.now()
+        msg.save()
+        
+        # Создаем запись аудита
+        audit_comment = f'Статус изменен на "В работу"'
+        if comment:
+            audit_comment += f': {comment[:50]}...'
+        TicketAudit.objects.create(
+            ticket=ticket,
+            action='status_changed',
+            user=request.user,
+            comment=audit_comment
+        )
+        
+        messages.success(request, mark_safe(f'Обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a> переведено в работу'))
+        return redirect('tickets:stream')
+
+    # Действие: перевести обращение в ожидание
+    if request.method == 'POST' and request.POST.get('action') == 'set_waiting':
+        msg_id = request.POST.get('message_id')
+        ticket_id = request.POST.get('ticket_id')
+        comment = request.POST.get('comment', '')
+        is_internal = request.POST.get('is_internal_waiting') == 'on'
+        
+        if not ticket_id or not ticket_id.isdigit():
+            messages.error(request, 'Укажите корректный ID обращения')
+            return redirect('tickets:stream')
+        
+        try:
+            ticket = Ticket.objects.get(id=int(ticket_id))
+            msg = get_object_or_404(TelegramMessage, id=msg_id)
+        except Ticket.DoesNotExist:
+            messages.error(request, 'Обращение не найдено')
+            return redirect('tickets:stream')
+        
+        # Проверяем, что статус можно изменить на "Ожидает ответа"
+        waiting_statuses = ['В работе', 'Новое']
+        if ticket.status.name not in waiting_statuses:
+            messages.error(request, f'Нельзя перевести в ожидание обращение со статусом "{ticket.status.name}"')
+            return redirect('tickets:stream')
+        
+        # Получаем статус "Ожидает ответа"
+        try:
+            waiting_status = TicketStatus.objects.get(name='Ожидает ответа')
+        except TicketStatus.DoesNotExist:
+            messages.error(request, 'Статус "Ожидает ответа" не найден в системе')
+            return redirect('tickets:stream')
+        
+        # Меняем статус
+        old_status = ticket.status
+        ticket.status = waiting_status
+        
+        # Если переводим из "Новое" в "Ожидает ответа", устанавливаем время взятия в работу
+        if old_status.name == 'Новое':
+            ticket.taken_at = timezone.now()
+        
+        ticket.save()
+        
+        # Создаем комментарий с пользовательским текстом (если есть)
+        if comment:
+            TicketComment.objects.create(
+                ticket=ticket,
+                author=request.user,
+                author_type='user',
+                content=comment,
+                is_internal=is_internal,
+                telegram_message_id=msg.message_id,
+                created_at=timezone.now()
+            )
+        
+        # Создаем внутренний комментарий о смене статуса
+        TicketComment.objects.create(
+            ticket=ticket,
+            author=request.user,
+            author_type='user',
+            content=f'Статус изменен с "{old_status.name}" на "Ожидает ответа"',
+            is_internal=True,  # Всегда внутренний
+            telegram_message_id=None,  # Не связываем с Telegram сообщением
+            created_at=msg.message_date  # Используем время сообщения из потока
+        )
+        
+        # Обновляем сообщение в потоке
+        msg.linked_ticket = ticket
+        msg.linked_action = 'set_waiting'
+        msg.processed_at = timezone.now()
+        msg.save()
+        
+        # Создаем запись аудита
+        audit_comment = f'Статус изменен на "Ожидает ответа"'
+        if comment:
+            audit_comment += f': {comment[:50]}...'
+        TicketAudit.objects.create(
+            ticket=ticket,
+            action='status_changed',
+            user=request.user,
+            comment=audit_comment
+        )
+        
+        messages.success(request, mark_safe(f'Обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a> переведено в ожидание'))
+        return redirect('tickets:stream')
+
     return render(request, 'tickets/stream.html', context)
 
 
@@ -1538,7 +2544,7 @@ def get_active_tickets(request):
             'client_name': ticket.client.name,
             'status_name': ticket.status.name,
             'category_name': ticket.category.name,
-            'created_at': ticket.created_at.strftime('%d.%m.%Y %H:%M'),
+            'created_at': timezone.localtime(ticket.created_at).strftime('%d.%m.%Y %H:%M'),
         })
     
     return JsonResponse({'results': results})
@@ -1568,7 +2574,7 @@ def get_all_tickets(request):
             'title': ticket.title,
             'client_name': ticket.client.name,
             'status_name': ticket.status.name,
-            'created_at': ticket.created_at.strftime('%d.%m.%Y %H:%M'),
+            'created_at': timezone.localtime(ticket.created_at).strftime('%d.%m.%Y %H:%M'),
         })
     
     return JsonResponse({'results': results})
@@ -1601,7 +2607,77 @@ def get_unresolved_tickets(request):
             'client_name': ticket.client.name,
             'status_name': ticket.status.name,
             'category_name': ticket.category.name,
-            'created_at': ticket.created_at.strftime('%d.%m.%Y %H:%M'),
+            'created_at': timezone.localtime(ticket.created_at).strftime('%d.%m.%Y %H:%M'),
+        })
+    
+    return JsonResponse({'results': results})
+
+
+@login_required
+def get_working_tickets(request):
+    """API: получить обращения для перевода в работу (Новое, Ожидает ответа, Решено)"""
+    query = request.GET.get('q', '')
+    
+    # Получаем статусы для перевода в работу
+    working_statuses = ['Новое', 'Ожидает ответа', 'Решено']
+    
+    tickets = Ticket.objects.filter(
+        status__name__in=working_statuses
+    ).select_related('client', 'category', 'status', 'assigned_to').order_by('-created_at')
+    
+    if query:
+        tickets = tickets.filter(
+            Q(id__icontains=query) |
+            Q(title__iregex=query) |
+            Q(client__name__iregex=query) |
+            Q(category__name__iregex=query)
+        )
+    
+    results = []
+    for ticket in tickets:
+        results.append({
+            'id': ticket.id,
+            'text': f"#{ticket.id} - {ticket.title} ({ticket.status.name})",
+            'title': ticket.title,
+            'status_name': ticket.status.name,
+            'client_name': ticket.client.name if ticket.client else 'Не указан',
+            'category_name': ticket.category.name if ticket.category else 'Не указана',
+            'created_at': timezone.localtime(ticket.created_at).strftime('%d.%m.%Y %H:%M'),
+        })
+    
+    return JsonResponse({'results': results})
+
+
+@login_required
+def get_waiting_tickets(request):
+    """API: получить обращения для перевода в ожидание (В работе, Новое)"""
+    query = request.GET.get('q', '')
+    
+    # Получаем статусы для перевода в ожидание
+    waiting_statuses = ['В работе', 'Новое']
+    
+    tickets = Ticket.objects.filter(
+        status__name__in=waiting_statuses
+    ).select_related('client', 'category', 'status', 'assigned_to').order_by('-created_at')
+    
+    if query:
+        tickets = tickets.filter(
+            Q(id__icontains=query) |
+            Q(title__iregex=query) |
+            Q(client__name__iregex=query) |
+            Q(category__name__iregex=query)
+        )
+    
+    results = []
+    for ticket in tickets:
+        results.append({
+            'id': ticket.id,
+            'text': f"#{ticket.id} - {ticket.title} ({ticket.status.name})",
+            'title': ticket.title,
+            'status_name': ticket.status.name,
+            'client_name': ticket.client.name if ticket.client else 'Не указан',
+            'category_name': ticket.category.name if ticket.category else 'Не указана',
+            'created_at': timezone.localtime(ticket.created_at).strftime('%d.%m.%Y %H:%M'),
         })
     
     return JsonResponse({'results': results})

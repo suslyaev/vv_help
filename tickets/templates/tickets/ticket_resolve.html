@@ -78,7 +78,7 @@
                                   placeholder="Дополнительные заметки (не видны клиенту)..."></textarea>
                     </div>
                     
-                    {% if ticket.telegram_chat_id and ticket.external_message_id %}
+                    {% if can_reply_in_telegram %}
                     <div class="mb-3">
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="reply_in_chat" id="reply_in_chat" value="1">

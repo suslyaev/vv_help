@@ -225,6 +225,7 @@ class TicketComment(models.Model):
     author_client = models.ForeignKey(Client, on_delete=models.PROTECT, verbose_name='Автор (клиент)', null=True, blank=True)
     content = models.TextField('Содержание')
     is_internal = models.BooleanField('Внутренний комментарий', default=False, help_text='Не виден клиенту')
+    telegram_message_id = models.CharField('ID сообщения в Telegram', max_length=50, blank=True, null=True)
     created_at = models.DateTimeField('Создано', default=timezone.now)
     
     class Meta:

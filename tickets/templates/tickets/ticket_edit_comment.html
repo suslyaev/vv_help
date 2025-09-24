@@ -1,0 +1,94 @@
+{% extends 'tickets/base.html' %}
+
+{% block title %}Редактировать комментарий #{{ comment.id }} - Система поддержки ВкусВилл{% endblock %}
+{% block page_title %}Редактировать комментарий{% endblock %}
+
+{% block page_actions %}
+    <a href="{% url 'tickets:ticket_detail' ticket.id %}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left"></i> Назад к обращению
+    </a>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Редактирование комментария</h6>
+            </div>
+            <div class="card-body">
+                <!-- Информация об обращении -->
+                <div class="mb-4 p-3 bg-light rounded">
+                    <h6 class="text-primary">Обращение #{{ ticket.id }}</h6>
+                    <p class="mb-2"><strong>Заголовок:</strong> {{ ticket.title }}</p>
+                    <p class="mb-2"><strong>Клиент:</strong> {{ ticket.client.name }}</p>
+                    <p class="mb-2"><strong>Категория:</strong> {{ ticket.category.name }}</p>
+                    <p class="mb-0"><strong>Комментарий от:</strong> {{ comment.get_author_name }}</p>
+                </div>
+
+                <!-- Форма редактирования комментария -->
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="content" class="form-label">Содержание комментария *</label>
+                        <textarea class="form-control" id="content" name="content" rows="6" 
+                                  placeholder="Введите текст комментария...">{{ comment.content }}</textarea>
+                    </div>
+                    
+                    {% if can_reply_in_telegram %}
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="update_in_chat" id="update_in_chat" value="1" checked>
+                            <label class="form-check-label" for="update_in_chat">
+                                <i class="bi bi-telegram"></i> Обновить сообщение в чате Telegram
+                            </label>
+                            <small class="form-text text-muted d-block">
+                                Бот обновит сообщение #{{ comment.telegram_message_id }} в группе "{{ ticket.telegram_chat_title }}"
+                            </small>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="d-flex justify-content-between">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-save"></i> Сохранить изменения
+                        </button>
+                        
+                        <a href="{% url 'tickets:ticket_detail' ticket.id %}" class="btn btn-secondary">
+                            Отмена
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <!-- Дополнительная информация или виджеты -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Информация</h6>
+            </div>
+            <div class="card-body">
+                <p><strong>Статус:</strong> {{ ticket.status.name }}</p>
+                <p><strong>Создано:</strong> {{ ticket.created_at|date:"d.m.Y H:i" }}</p>
+                {% if ticket.resolved_at %}
+                    <p><strong>Решено:</strong> {{ ticket.resolved_at|date:"d.m.Y H:i" }}</p>
+                {% endif %}
+                <p><strong>Исполнитель:</strong> 
+                    {% if ticket.assigned_to %}
+                        {{ ticket.assigned_to.get_full_name|default:ticket.assigned_to.username }}
+                    {% else %}
+                        <span class="text-muted">Не назначен</span>
+                    {% endif %}
+                </p>
+                <p><strong>Комментарий создан:</strong> {{ comment.created_at|date:"d.m.Y H:i" }}</p>
+                {% if comment.telegram_message_id %}
+                    <p><strong>ID в Telegram:</strong> {{ comment.telegram_message_id }}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

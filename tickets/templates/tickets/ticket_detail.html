@@ -115,7 +115,20 @@
                 
                 {% if ticket.resolution %}
                 <div class="mb-3">
-                    <strong>Решение:</strong>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>Решение:</strong>
+                        {% if ticket.telegram_chat_id and ticket.external_message_id and ticket.status.is_final %}
+                            <div class="btn-group" role="group">
+                                <a href="{% url 'tickets:edit_resolution' ticket.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-pencil"></i> Редактировать
+                                </a>
+                                <a href="{% url 'tickets:delete_resolution' ticket.id %}" class="btn btn-sm btn-outline-danger" 
+                                   onclick="return confirm('Удалить решение? Это действие удалит сообщение из Telegram и потока.')">
+                                    <i class="bi bi-trash"></i> Удалить
+                                </a>
+                            </div>
+                        {% endif %}
+                    </div>
                     <div class="mt-2 p-3 bg-success bg-opacity-10 rounded">
                         {{ ticket.resolution|linebreaks }}
                     </div>
@@ -205,9 +218,22 @@
                 <h6 class="m-0 font-weight-bold text-primary">Комментарии</h6>
             </div>
             <div class="card-body">
-                {% if comments %}
-                    {% for comment in comments %}
+                {% if enriched_comments %}
+                    {% for comment_data in enriched_comments %}
+                    {% with comment=comment_data.comment %}
                     <div class="mb-3 p-3 border rounded {% if comment.is_internal %}bg-warning bg-opacity-10{% endif %}">
+                        <!-- Цитата для ответов -->
+                        {% if comment_data.is_reply %}
+                        <div class="mb-2 p-2 bg-light border-start border-primary border-3 rounded" style="font-size: 0.9em;">
+                            <div class="text-muted mb-1">
+                                <i class="bi bi-reply"></i> Ответ на сообщение от {{ comment_data.reply_info.original_author }}
+                            </div>
+                            <div class="text-truncate" style="max-height: 2em; overflow: hidden;">
+                                {{ comment_data.reply_info.original_text|truncatechars:100 }}
+                            </div>
+                        </div>
+                        {% endif %}
+                        
                         <div class="d-flex justify-content-between align-items-start mb-2">
                             <div>
                                 <strong>{{ comment.get_author_name }}</strong>
@@ -219,11 +245,36 @@
                                 {% if comment.is_internal %}
                                     <span class="badge bg-warning text-dark ms-2">Внутренний</span>
                                 {% endif %}
+                                {% if comment.telegram_message_id and comment_data.from_bot %}
+                                    <span class="badge bg-success text-white ms-2">
+                                        <i class="bi bi-telegram"></i> Отправлено в Telegram
+                                    </span>
+                                {% endif %}
                             </div>
-                            <small class="text-muted">{{ comment.created_at|date:"d.m.Y H:i" }}</small>
+                            <div class="text-end">
+                                <div class="btn-group" role="group">
+                                    {% if comment.telegram_message_id and ticket.telegram_chat_id and ticket.external_message_id and can_reply_in_telegram %}
+                                        <button type="button" class="btn btn-sm btn-outline-success" 
+                                                onclick="showReplyModal({{ comment.id }}, '{{ comment.get_author_name|escapejs }}', '{{ comment.content|truncatechars:50|escapejs }}')">
+                                            <i class="bi bi-reply"></i> Ответить
+                                        </button>
+                                    {% endif %}
+                                    {% if comment.telegram_message_id and comment_data.from_bot and ticket.telegram_chat_id and ticket.external_message_id and can_reply_in_telegram %}
+                                        <a href="{% url 'tickets:edit_comment' comment.id %}" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-pencil"></i> Редактировать
+                                        </a>
+                                        <a href="{% url 'tickets:delete_comment' comment.id %}" class="btn btn-sm btn-outline-danger" 
+                                           onclick="return confirm('Удалить комментарий? Это действие удалит сообщение из Telegram и потока.')">
+                                            <i class="bi bi-trash"></i> Удалить
+                                        </a>
+                                    {% endif %}
+                                </div>
+                                <small class="text-muted">{{ comment.created_at|date:"d.m.Y H:i" }}</small>
+                            </div>
                         </div>
                         <div>{{ comment.content|linebreaks }}</div>
                     </div>
+                    {% endwith %}
                     {% endfor %}
                 {% else %}
                     <p class="text-muted">Комментариев пока нет</p>
@@ -266,6 +317,25 @@
                             </label>
                         </div>
                     </div>
+                    
+                    {% if ticket.telegram_chat_id and ticket.external_message_id %}
+                    {% with can_reply_in_telegram=can_reply_in_telegram %}
+                        {% if can_reply_in_telegram %}
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="reply_in_chat" id="reply_in_chat" value="1">
+                                <label class="form-check-label" for="reply_in_chat">
+                                    <i class="bi bi-telegram"></i> Отправить в чат Telegram
+                                </label>
+                                <small class="form-text text-muted d-block">
+                                    Бот отправит комментарий как ответ на сообщение #{{ ticket.external_message_id }} в группе "{{ ticket.telegram_chat_title }}"
+                                </small>
+                            </div>
+                        </div>
+                        {% endif %}
+                    {% endwith %}
+                    {% endif %}
+                    
                     <button type="submit" name="comment" class="btn btn-primary">
                         <i class="bi bi-chat-dots"></i> Добавить комментарий
                     </button>
@@ -383,6 +453,61 @@
     </div>
 </div>
 
+<!-- Модальное окно для ответа на комментарий -->
+<div class="modal fade" id="replyModal" tabindex="-1" aria-labelledby="replyModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="replyModalLabel">Ответить на комментарий</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'tickets:ticket_detail' ticket.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reply_to_comment">
+                <input type="hidden" name="comment_id" id="replyCommentId">
+                
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Ответ на комментарий от:</label>
+                        <div class="p-2 bg-light border rounded">
+                            <strong id="replyCommentAuthor"></strong>
+                            <div class="text-muted mt-1" id="replyCommentContent"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="replyContent" class="form-label">Ваш ответ *</label>
+                        <textarea class="form-control" id="replyContent" name="reply_content" rows="4" 
+                                  placeholder="Введите ваш ответ..." required></textarea>
+                    </div>
+                    
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="is_internal_reply" id="replyInternal">
+                        <label class="form-check-label" for="replyInternal">Внутренний комментарий</label>
+                    </div>
+                    
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="send_to_telegram" id="sendToTelegram" checked>
+                        <label class="form-check-label" for="sendToTelegram">
+                            <i class="bi bi-telegram"></i> Отправить ответ в Telegram
+                        </label>
+                        <small class="form-text text-muted d-block">
+                            Ответ будет отправлен как ответ на исходное сообщение в группе "{{ ticket.telegram_chat_title }}"
+                        </small>
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-send"></i> Отправить ответ
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const authorTypeSelect = document.getElementById('{{ comment_form.author_type.id_for_label }}');
@@ -402,5 +527,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // Обработчик изменения
     authorTypeSelect.addEventListener('change', toggleClientField);
 });
+
+// Функция для показа модального окна ответа
+function showReplyModal(commentId, authorName, commentContent) {
+    document.getElementById('replyCommentId').value = commentId;
+    document.getElementById('replyCommentAuthor').textContent = authorName;
+    document.getElementById('replyCommentContent').textContent = commentContent;
+    
+    const modal = new bootstrap.Modal(document.getElementById('replyModal'));
+    modal.show();
+}
 </script>
 {% endblock %}

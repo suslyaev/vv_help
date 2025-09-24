@@ -1,0 +1,98 @@
+{% extends 'tickets/base.html' %}
+
+{% block title %}Удалить решение обращения #{{ ticket.id }} - Система поддержки ВкусВилл{% endblock %}
+{% block page_title %}Удалить решение обращения{% endblock %}
+
+{% block page_actions %}
+    <a href="{% url 'tickets:ticket_detail' ticket.id %}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left"></i> Назад к обращению
+    </a>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Подтверждение удаления решения</h6>
+            </div>
+            <div class="card-body">
+                <!-- Информация об обращении -->
+                <div class="mb-4 p-3 bg-light rounded">
+                    <h6 class="text-primary">Обращение #{{ ticket.id }}</h6>
+                    <p class="mb-2"><strong>Заголовок:</strong> {{ ticket.title }}</p>
+                    <p class="mb-2"><strong>Клиент:</strong> {{ ticket.client.name }}</p>
+                    <p class="mb-2"><strong>Категория:</strong> {{ ticket.category.name }}</p>
+                    <p class="mb-2"><strong>Статус:</strong> {{ ticket.status.name }}</p>
+                    <p class="mb-0"><strong>Решено:</strong> {{ ticket.resolved_at|date:"d.m.Y H:i" }}</p>
+                </div>
+
+                <!-- Предупреждение -->
+                <div class="alert alert-danger">
+                    <h5 class="alert-heading">
+                        <i class="bi bi-exclamation-triangle"></i> Внимание!
+                    </h5>
+                    <p>Вы собираетесь удалить решение обращения, которое было отправлено в Telegram. Это действие:</p>
+                    <ul class="mb-0">
+                        <li>Удалит сообщение с решением из Telegram чата</li>
+                        <li>Удалит сообщение из потока</li>
+                        <li>Очистит поле решения в системе</li>
+                        <li>Изменит статус обращения на "В работе"</li>
+                    </ul>
+                </div>
+
+                <!-- Содержимое решения -->
+                <div class="mb-4">
+                    <h6>Содержимое решения:</h6>
+                    <div class="p-3 bg-light border rounded">
+                        {{ ticket.resolution|linebreaks }}
+                    </div>
+                </div>
+
+                <!-- Форма подтверждения удаления -->
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="d-flex justify-content-between">
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-trash"></i> Да, удалить решение
+                        </button>
+                        
+                        <a href="{% url 'tickets:ticket_detail' ticket.id %}" class="btn btn-secondary">
+                            Отмена
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <!-- Дополнительная информация -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Информация</h6>
+            </div>
+            <div class="card-body">
+                <p><strong>Статус:</strong> {{ ticket.status.name }}</p>
+                <p><strong>Создано:</strong> {{ ticket.created_at|date:"d.m.Y H:i" }}</p>
+                {% if ticket.resolved_at %}
+                    <p><strong>Решено:</strong> {{ ticket.resolved_at|date:"d.m.Y H:i" }}</p>
+                {% endif %}
+                <p><strong>Исполнитель:</strong> 
+                    {% if ticket.assigned_to %}
+                        {{ ticket.assigned_to.get_full_name|default:ticket.assigned_to.username }}
+                    {% else %}
+                        <span class="text-muted">Не назначен</span>
+                    {% endif %}
+                </p>
+                <hr>
+                {% if ticket.telegram_chat_id %}
+                    <p><strong>Telegram группа:</strong> {{ ticket.telegram_chat_title }}</p>
+                    <p><strong>ID сообщения:</strong> {{ ticket.external_message_id }}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

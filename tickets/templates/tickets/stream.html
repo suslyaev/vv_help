@@ -23,7 +23,7 @@
     <input type="hidden" name="message_id" id="message_id_input">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <div>
-        <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#bulkCommentModal">Массовый комментарий</button>
+        <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#bulkCommentModal">Комментарий</button>
         <button name="action" value="bulk_delete" class="btn btn-outline-danger btn-sm" onclick="return confirm('Вы уверены, что хотите удалить выбранные сообщения?');">Удалить выбранные</button>
       </div>
       <div class="d-flex align-items-center">
@@ -82,15 +82,14 @@
                 <span class="text-muted" style="font-size: 0.7rem;">msg_id: {{ m.message_id }}</span> · {{ m.message_date|date:"d.m.Y H:i" }} · Чат: {{ m.chat_title|default:m.chat_id }} · {{ m.media_type|upper }}
               </div>
               <div class="fw-semibold">
-                {{ m.from_username|default:m.from_fullname|default:m.from_user_id }}
                 {% with cid=m.from_user_id %}
                   {% with u=uta_map|dict_get:cid %}
                     {% if u %}
-                      <span class="badge bg-primary ms-1">{{ u.get_full_name|default:u.username }}</span>
+                      <span class="badge bg-primary me-1">{{ u.get_full_name|default:u.username }}</span>
                     {% else %}
                       {% with cl=clients_map|dict_get:cid %}
                         {% if cl %}
-                          <span class="badge bg-info text-dark ms-1">
+                          <span class="badge bg-info text-dark me-1">
                             {{ cl.name }}{% if cl.organization %} ({{ cl.organization.name }}){% endif %}
                           </span>
                         {% endif %}
@@ -98,6 +97,7 @@
                     {% endif %}
                   {% endwith %}
                 {% endwith %}
+                {{ m.from_username|default:m.from_fullname|default:m.from_user_id }}
               </div>
               
               {% if m.reply_to_message_id %}
@@ -106,7 +106,22 @@
                     {% if reply_msg %}
                       <div class="border-start border-2 border-secondary ps-2 mb-1 bg-light" style="font-size: 0.75rem; line-height: 1.2;">
                         <div class="text-muted mb-1">
-                          ↳ {{ reply_msg.author }}: {{ reply_msg.text|truncatechars:80 }}
+                          ↳ {% with cid=reply_msg.from_user_id %}
+                            {% with u=uta_map|dict_get:cid %}
+                              {% if u %}
+                                <span class="badge bg-primary me-1" style="font-size: 0.6rem;">{{ u.get_full_name|default:u.username }}</span>
+                              {% else %}
+                                {% with cl=clients_map|dict_get:cid %}
+                                  {% if cl %}
+                                    <span class="badge bg-info text-dark me-1" style="font-size: 0.6rem;">
+                                      {{ cl.name }}{% if cl.organization %} ({{ cl.organization.name }}){% endif %}
+                                    </span>
+                                  {% endif %}
+                                {% endwith %}
+                              {% endif %}
+                            {% endwith %}
+                          {% endwith %}
+                          {{ reply_msg.author }}: {{ reply_msg.text|truncatechars:80 }}
                         </div>
                       </div>
                     {% endif %}
@@ -123,6 +138,10 @@
                     <span class="badge bg-success me-1"><i class="bi bi-plus-circle"></i> Создано обращение</span>
                   {% elif m.linked_action == 'add_comment' %}
                     <span class="badge bg-info me-1"><i class="bi bi-chat-dots"></i> Добавлен комментарий</span>
+                  {% elif m.linked_action == 'set_working' %}
+                    <span class="badge bg-warning me-1"><i class="bi bi-play-circle"></i> Взято в работу</span>
+                  {% elif m.linked_action == 'set_waiting' %}
+                    <span class="badge bg-secondary me-1"><i class="bi bi-clock"></i> Переведено в ожидание</span>
                   {% elif m.linked_action == 'resolve_ticket' %}
                     <span class="badge bg-primary me-1"><i class="bi bi-check-circle"></i> Решено обращение</span>
                   {% endif %}
@@ -140,7 +159,8 @@
                           data-from-username="{{ m.from_username|escapejs }}"
                           data-from-fullname="{{ m.from_fullname|escapejs }}"
                           data-from-user-id="{{ m.from_user_id|escapejs }}">Новое обращение</button>
-                  <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#commentModal" data-message-id="{{ m.id }}">Комментарий</button>
+                  <button type="button" class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#setWorkingModal" data-message-id="{{ m.id }}">В работу</button>
+                  <button type="button" class="btn btn-outline-info btn-sm" data-bs-toggle="modal" data-bs-target="#setWaitingModal" data-message-id="{{ m.id }}">В ожидание</button>
                   <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#resolveModal" data-message-id="{{ m.id }}">Решение</button>
                 </div>
               {% endif %}
@@ -174,9 +194,22 @@
                 <div class="autocomplete-dropdown" id="commentTicketDropdown"></div>
               </div>
             </div>
+            <div class="mb-3">
+              <label class="form-label">Текст комментария:</label>
+              <textarea class="form-control" name="comment_text" rows="3" placeholder="Введите текст комментария..."></textarea>
+            </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" name="is_internal" id="commentInternal">
               <label class="form-check-label" for="commentInternal">Внутренний</label>
+            </div>
+            <div class="form-check" id="commentTelegramCheck" style="display: none;">
+              <input class="form-check-input" type="checkbox" name="reply_in_chat" id="commentReplyInChat" value="1">
+              <label class="form-check-label" for="commentReplyInChat">
+                <i class="bi bi-telegram"></i> Отправить в чат Telegram
+              </label>
+              <small class="form-text text-muted d-block">
+                Бот отправит комментарий как ответ на исходное сообщение
+              </small>
             </div>
           </div>
           <div class="modal-footer">
@@ -225,7 +258,7 @@
           {% csrf_token %}
           <input type="hidden" name="action" value="bulk_comment">
           <div class="modal-header">
-            <h5 class="modal-title">Массовый комментарий</h5>
+            <h5 class="modal-title">Комментарий</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
@@ -323,6 +356,112 @@
     </div>
   </div>
 
+  <!-- Модальное окно "В работу" -->
+  <div class="modal fade" id="setWorkingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form method="post" action="{% url 'tickets:stream' %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="set_working">
+          <input type="hidden" name="message_id" id="setWorkingMessageId">
+          
+          <div class="modal-header">
+            <h5 class="modal-title">Перевести обращение в работу</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          
+          <div class="modal-body">
+            <div class="mb-3">
+              <label for="setWorkingTicketSearch" class="form-label">Выберите обращение *</label>
+              <div class="autocomplete-container">
+                <input type="text" class="form-control autocomplete-field" name="ticket_search" 
+                       id="setWorkingTicketSearch" placeholder="Начните вводить номер или название обращения..."
+                       data-autocomplete-url="/tickets/api/tickets/working/" data-autocomplete-min-length="1">
+                <input type="hidden" name="ticket_id" id="setWorkingTicketId">
+                <div class="autocomplete-dropdown" id="setWorkingTicketDropdown"></div>
+              </div>
+              <small class="form-text text-muted">Показываются обращения в статусах: Новое, Ожидает ответа, Решено</small>
+            </div>
+            
+            <div class="mb-3">
+              <label for="setWorkingComment" class="form-label">Комментарий (необязательно)</label>
+              <textarea class="form-control" name="comment" id="setWorkingComment" rows="3" 
+                        placeholder="Введите комментарий к изменению статуса..."></textarea>
+            </div>
+            
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_internal_working" id="setWorkingInternal">
+              <label class="form-check-label" for="setWorkingInternal">Внутренний комментарий (не виден клиенту)</label>
+            </div>
+            <div class="alert alert-info mt-2 py-2">
+              <small><i class="bi bi-info-circle"></i> Автоматически будет создан внутренний комментарий о смене статуса</small>
+            </div>
+          </div>
+          
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+            <button type="submit" class="btn btn-warning">
+              <i class="bi bi-play-circle"></i> Взять в работу
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальное окно "В ожидание" -->
+  <div class="modal fade" id="setWaitingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form method="post" action="{% url 'tickets:stream' %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="set_waiting">
+          <input type="hidden" name="message_id" id="setWaitingMessageId">
+          
+          <div class="modal-header">
+            <h5 class="modal-title">Перевести обращение в ожидание</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          
+          <div class="modal-body">
+            <div class="mb-3">
+              <label for="setWaitingTicketSearch" class="form-label">Выберите обращение *</label>
+              <div class="autocomplete-container">
+                <input type="text" class="form-control autocomplete-field" name="ticket_search" 
+                       id="setWaitingTicketSearch" placeholder="Начните вводить номер или название обращения..."
+                       data-autocomplete-url="/tickets/api/tickets/waiting/" data-autocomplete-min-length="1">
+                <input type="hidden" name="ticket_id" id="setWaitingTicketId">
+                <div class="autocomplete-dropdown" id="setWaitingTicketDropdown"></div>
+              </div>
+              <small class="form-text text-muted">Показываются обращения в статусах: В работе, Новое</small>
+            </div>
+            
+            <div class="mb-3">
+              <label for="setWaitingComment" class="form-label">Комментарий (необязательно)</label>
+              <textarea class="form-control" name="comment" id="setWaitingComment" rows="3" 
+                        placeholder="Введите комментарий к изменению статуса..."></textarea>
+            </div>
+            
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_internal_waiting" id="setWaitingInternal">
+              <label class="form-check-label" for="setWaitingInternal">Внутренний комментарий (не виден клиенту)</label>
+            </div>
+            <div class="alert alert-info mt-2 py-2">
+              <small><i class="bi bi-info-circle"></i> Автоматически будет создан внутренний комментарий о смене статуса</small>
+            </div>
+          </div>
+          
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+            <button type="submit" class="btn btn-info">
+              <i class="bi bi-clock"></i> Перевести в ожидание
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
 </div>
 {% endblock %}
 
@@ -342,11 +481,28 @@ document.addEventListener('DOMContentLoaded', function() {
     commentModal.addEventListener('show.bs.modal', function (event) {
       var button = event.relatedTarget;
       var messageId = button.getAttribute('data-message-id');
+      var chatId = button.getAttribute('data-chat-id');
       document.getElementById('commentMessageId').value = messageId;
+      
+      // Скрываем галку для отправки в Telegram по умолчанию
+      document.getElementById('commentTelegramCheck').style.display = 'none';
       
       // Инициализируем автокомплит при открытии модального окна
       setTimeout(() => {
         initTicketAutocomplete('commentTicketSearch', 'commentTicketId', 'commentTicketDropdown', '/tickets/api/tickets/all/');
+        
+        // Добавляем обработчик изменения выбранного обращения
+        document.getElementById('commentTicketId').addEventListener('change', function() {
+          var ticketId = this.value;
+          if (ticketId) {
+            // Проверяем, можно ли отправлять комментарии в Telegram для этого обращения
+            // Здесь нужно будет проверить, есть ли у обращения Telegram данные и разрешена ли группа
+            // Пока просто показываем галку для всех обращений с Telegram данными
+            document.getElementById('commentTelegramCheck').style.display = 'block';
+          } else {
+            document.getElementById('commentTelegramCheck').style.display = 'none';
+          }
+        });
       }, 100);
     });
   }
@@ -360,6 +516,34 @@ document.addEventListener('DOMContentLoaded', function() {
       // Инициализируем автокомплит при открытии модального окна
       setTimeout(() => {
         initTicketAutocomplete('resolveTicketSearch', 'resolveTicketId', 'resolveTicketDropdown', '/tickets/api/tickets/unresolved/');
+      }, 100);
+    });
+  }
+  
+  var setWorkingModal = document.getElementById('setWorkingModal');
+  if (setWorkingModal) {
+    setWorkingModal.addEventListener('show.bs.modal', function (event) {
+      var button = event.relatedTarget;
+      var messageId = button.getAttribute('data-message-id');
+      document.getElementById('setWorkingMessageId').value = messageId;
+      
+      // Инициализируем автокомплит при открытии модального окна
+      setTimeout(() => {
+        initTicketAutocomplete('setWorkingTicketSearch', 'setWorkingTicketId', 'setWorkingTicketDropdown', '/tickets/api/tickets/working/');
+      }, 100);
+    });
+  }
+  
+  var setWaitingModal = document.getElementById('setWaitingModal');
+  if (setWaitingModal) {
+    setWaitingModal.addEventListener('show.bs.modal', function (event) {
+      var button = event.relatedTarget;
+      var messageId = button.getAttribute('data-message-id');
+      document.getElementById('setWaitingMessageId').value = messageId;
+      
+      // Инициализируем автокомплит при открытии модального окна
+      setTimeout(() => {
+        initTicketAutocomplete('setWaitingTicketSearch', 'setWaitingTicketId', 'setWaitingTicketDropdown', '/tickets/api/tickets/waiting/');
       }, 100);
     });
   }
@@ -745,7 +929,7 @@ function initTicketAutocomplete(inputId, hiddenId, dropdownId, apiUrl) {
               item.className = 'autocomplete-item';
               item.innerHTML = `
                 <div class="fw-bold">#${ticket.id} ${ticket.title}</div>
-                <small class="text-muted">${ticket.client_name} · ${ticket.status_name} · ${ticket.created_at}</small>
+                <small class="text-muted">${ticket.client_name || 'Не указан'} · ${ticket.status_name || 'Не указан'} · ${ticket.created_at}</small>
               `;
               item.addEventListener('click', () => {
                 input.value = `#${ticket.id} ${ticket.title}`;
