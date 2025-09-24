@@ -820,6 +820,31 @@ def autocomplete_users(request):
     return JsonResponse({'results': results})
 
 
+def autocomplete_groups(request):
+    """AJAX autocomplete для групп Telegram"""
+    from .models import TelegramGroup
+    
+    query = request.GET.get('q', '')
+    base_qs = TelegramGroup.objects.all()
+    if len(query) >= 1:
+        base_qs = base_qs.filter(
+            Q(title__iregex=query) |
+            Q(chat_id__iregex=query)
+        )
+    groups = base_qs.order_by('title', 'chat_id')[:10]
+    
+    results = []
+    for group in groups:
+        results.append({
+            'id': group.chat_id,
+            'text': group.title or group.chat_id,
+            'chat_id': group.chat_id,
+            'title': group.title
+        })
+    
+    return JsonResponse({'results': results})
+
+
 @login_required
 def delete_attachment(request, attachment_id):
     """Удаление вложения"""
@@ -1091,10 +1116,10 @@ def stream(request):
     qs = TelegramMessage.objects.select_related('linked_ticket').order_by('-message_date', '-id')
 
     # Фильтры
-    chat = request.GET.get('chat')
+    group_id = request.GET.get('group_id') or request.GET.get('group')
     q = request.GET.get('q')
-    if chat:
-        qs = qs.filter(chat_id=chat)
+    if group_id and group_id not in (None, '', 'None', 'null', 'NULL'):
+        qs = qs.filter(chat_id=group_id)
     if q:
         qs = qs.filter(Q(text__icontains=q) | Q(from_username__icontains=q) | Q(from_fullname__icontains=q))
 
@@ -1308,14 +1333,36 @@ def stream(request):
     if request.method == 'POST' and request.POST.get('action') == 'cleanup_period':
         date_from = request.POST.get('date_from')
         date_to = request.POST.get('date_to')
+        include_processed = request.POST.get('include_processed') == 'on'
+        
         if not date_from or not date_to:
             messages.error(request, 'Укажите период для очистки')
             return redirect('tickets:stream')
-        cnt, _ = TelegramMessage.objects.filter(message_date__date__gte=date_from, message_date__date__lte=date_to).delete()
+        
+        # Базовый фильтр по датам
+        qs_to_delete = TelegramMessage.objects.filter(
+            message_date__date__gte=date_from, 
+            message_date__date__lte=date_to
+        )
+        
+        # Если галка "Даже обработанные" не нажата, удаляем только необработанные
+        if not include_processed:
+            qs_to_delete = qs_to_delete.filter(linked_ticket__isnull=True)
+        
+        cnt, _ = qs_to_delete.delete()
         messages.success(request, f'Удалено записей из потока: {cnt}')
         return redirect('tickets:stream')
 
-    paginator = Paginator(qs, 25)
+    # Пагинация с поддержкой per_page
+    per_page = request.GET.get('per_page', '25')
+    try:
+        per_page = int(per_page)
+        if per_page not in [25, 50, 100, 200]:
+            per_page = 25
+    except (ValueError, TypeError):
+        per_page = 25
+    
+    paginator = Paginator(qs, per_page)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
@@ -1327,11 +1374,21 @@ def stream(request):
     for access in UserTelegramAccess.objects.select_related('user').filter(telegram_user_id__in=from_ids, is_allowed=True):
         uta_map[access.telegram_user_id] = access.user
 
+    # Получаем название группы для отображения в фильтре
+    group_name = ''
+    if group_id:
+        from .models import TelegramGroup
+        group = TelegramGroup.objects.filter(chat_id=group_id).first()
+        if group:
+            group_name = group.title or group.chat_id
+
     context = {
         'page_obj': page_obj,
         'filters': {
-            'chat': chat or '',
+            'group_id': group_id or '',
+            'group_name': group_name,
             'q': q or '',
+            'per_page': per_page,
         },
         'clients_map': clients_map,
         'uta_map': uta_map,

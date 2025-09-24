@@ -10,7 +10,10 @@
   <div class="d-flex justify-content-between align-items-center mb-3">
     <form class="d-flex" method="get">
       <input type="text" class="form-control me-2" name="q" value="{{ filters.q }}" placeholder="Поиск по тексту или пользователю">
-      <input type="text" class="form-control me-2" name="chat" value="{{ filters.chat }}" placeholder="ID чата">
+      <input type="text" class="form-control autocomplete-field me-2" name="group" 
+             data-autocomplete-url="/tickets/api/groups/" data-autocomplete-min-length="0"
+             placeholder="Начните вводить группу..." value="{{ filters.group_name }}">
+      <input type="hidden" name="group_id" id="group_id" value="{{ filters.group_id }}">
       <button class="btn btn-primary" type="submit">Искать</button>
     </form>
   </div>
@@ -26,9 +29,48 @@
       <div class="d-flex align-items-center">
         <input type="date" class="form-control form-control-sm me-2" name="date_from">
         <input type="date" class="form-control form-control-sm me-2" name="date_to">
+        <div class="form-check me-2">
+          <input class="form-check-input" type="checkbox" name="include_processed" id="include_processed">
+          <label class="form-check-label" for="include_processed">
+            Даже обработанные
+          </label>
+        </div>
         <button name="action" value="cleanup_period" class="btn btn-outline-secondary btn-sm" onclick="return confirm('Вы уверены, что хотите удалить сообщения за указанный период?');">Очистить период</button>
       </div>
     </div>
+
+    <!-- Пагинация и выбор количества элементов -->
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <span class="text-muted">Показано {{ page_obj.start_index }}-{{ page_obj.end_index }} из {{ page_obj.paginator.count }} сообщений</span>
+      </div>
+      <div class="d-flex align-items-center">
+        <span class="me-2">На странице:</span>
+        <select class="form-select form-select-sm me-3" style="width: auto;" onchange="changePageSize(this.value)">
+          <option value="25" {% if page_obj.paginator.per_page == 25 %}selected{% endif %}>25</option>
+          <option value="50" {% if page_obj.paginator.per_page == 50 %}selected{% endif %}>50</option>
+          <option value="100" {% if page_obj.paginator.per_page == 100 %}selected{% endif %}>100</option>
+          <option value="200" {% if page_obj.paginator.per_page == 200 %}selected{% endif %}>200</option>
+        </select>
+        <nav>
+          <ul class="pagination pagination-sm mb-0">
+            {% if page_obj.has_previous %}
+              <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&q={{ filters.q }}&group_id={{ filters.group_id }}&per_page={{ page_obj.paginator.per_page }}">‹</a></li>
+            {% else %}
+              <li class="page-item disabled"><span class="page-link">‹</span></li>
+            {% endif %}
+            <li class="page-item disabled"><span class="page-link">{{ page_obj.number }}/{{ page_obj.paginator.num_pages }}</span></li>
+            {% if page_obj.has_next %}
+              <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&q={{ filters.q }}&group_id={{ filters.group_id }}&per_page={{ page_obj.paginator.per_page }}">›</a></li>
+            {% else %}
+              <li class="page-item disabled"><span class="page-link">›</span></li>
+            {% endif %}
+          </ul>
+        </nav>
+      </div>
+    </div>
+    {% endif %}
 
     <div class="list-group">
       {% for m in page_obj %}
@@ -190,23 +232,6 @@
     </div>
   </div>
 
-  {% if page_obj.paginator.num_pages > 1 %}
-  <nav class="mt-3">
-    <ul class="pagination">
-      {% if page_obj.has_previous %}
-        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&q={{ filters.q }}&chat={{ filters.chat }}">Назад</a></li>
-      {% else %}
-        <li class="page-item disabled"><span class="page-link">Назад</span></li>
-      {% endif %}
-      <li class="page-item disabled"><span class="page-link">Стр. {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}</span></li>
-      {% if page_obj.has_next %}
-        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&q={{ filters.q }}&chat={{ filters.chat }}">Вперёд</a></li>
-      {% else %}
-        <li class="page-item disabled"><span class="page-link">Вперёд</span></li>
-      {% endif %}
-    </ul>
-  </nav>
-  {% endif %}
 </div>
 {% endblock %}
 
@@ -407,6 +432,14 @@ function initTicketAutocomplete(inputId, hiddenId, dropdownId, apiUrl) {
 }
 
 // Автокомплит инициализируется при открытии модальных окон
+
+// Функция для изменения количества элементов на странице
+function changePageSize(perPage) {
+  const url = new URL(window.location);
+  url.searchParams.set('per_page', perPage);
+  url.searchParams.set('page', '1'); // Сбрасываем на первую страницу
+  window.location.href = url.toString();
+}
 </script>
 {% endblock %}
 

@@ -354,3 +354,25 @@ class TelegramMessage(models.Model):
 
     def __str__(self):
         return f"[{self.chat_title or self.chat_id}] {self.from_username or self.from_fullname}: {self.text[:40]}"
+
+
+class TelegramGroup(models.Model):
+    """Группы/каналы Telegram, в которых бот читает сообщения
+    Используется для управления доступом и записью сообщений в поток.
+    """
+    chat_id = models.CharField('ID чата', max_length=64, unique=True)
+    title = models.CharField('Название группы', max_length=255, blank=True)
+    is_blocked = models.BooleanField('Заблокировано', default=False)
+    write_to_stream = models.BooleanField('Записывать сообщения в поток', default=True)
+    updated_at = models.DateTimeField('Обновлено', auto_now=True)
+
+    class Meta:
+        verbose_name = 'Группа Telegram'
+        verbose_name_plural = 'Группы Telegram'
+        ordering = ['title', 'chat_id']
+        indexes = [
+            models.Index(fields=['chat_id']),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.title or self.chat_id}"

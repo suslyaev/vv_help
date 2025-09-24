@@ -49,6 +49,7 @@ urlpatterns = [
     path('api/users/', views.autocomplete_users, name='autocomplete_users'),
     path('api/organizations/', views.autocomplete_organizations, name='autocomplete_organizations'),
     path('api/organizations/create/', views.create_organization, name='create_organization'),
+    path('api/groups/', views.autocomplete_groups, name='autocomplete_groups'),
     path('api/tickets/active/', views.get_active_tickets, name='get_active_tickets'),
     path('api/tickets/all/', views.get_all_tickets, name='get_all_tickets'),
     path('api/tickets/unresolved/', views.get_unresolved_tickets, name='get_unresolved_tickets'),

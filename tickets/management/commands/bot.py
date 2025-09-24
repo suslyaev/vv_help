@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.db import transaction
 from asgiref.sync import sync_to_async
 
-from tickets.models import Ticket, Category, Client, TicketStatus, UserTelegramAccess, TelegramMessage
+from tickets.models import Ticket, Category, Client, TicketStatus, UserTelegramAccess, TelegramMessage, TelegramGroup
 from django.contrib.auth.models import User
 
 from telegram import Update
@@ -101,15 +101,17 @@ class Command(BaseCommand):
             # Переслано из канала/группы
             external_id = str(message.forward_from_chat.id)
 
-        # Логируем сообщение в поток (всегда)
-        await sync_to_async(self._log_message_sync)(message, text, media_type)
+        # Решаем: логировать ли сообщение в поток
+        chat_type = (message.chat.type or '').lower()
+        should_log = await sync_to_async(self._should_log_to_stream)(message)
+        if should_log:
+            await sync_to_async(self._log_message_sync)(message, text, media_type)
         try:
             logging.info("tg_logged: chat_type=%s msg_id=%s", getattr(message.chat, 'type', None), getattr(message, 'message_id', None))
         except Exception:
             pass
 
         # Создаём тикет только для личных чатов. В группах/каналах — только логируем
-        chat_type = (message.chat.type or '').lower()
         if chat_type != 'private':
             try:
                 logging.info("tg_skip_create_ticket_non_private: chat_type=%s", chat_type)
@@ -125,6 +127,14 @@ class Command(BaseCommand):
                 pass
             return
 
+        # Заголовок тикета: если личка — укажем, из какой группы переслано (если есть)
+        title = text[:100] if text else 'Сообщение из Telegram'
+        group_title = ''
+        if getattr(message, 'forward_from_chat', None):
+            group_title = message.forward_from_chat.title or message.forward_from_chat.username or ''
+        if group_title:
+            title = f"Создано из группы {group_title}"
+
         # Создаём тикет
         ticket = await sync_to_async(self._create_ticket_sync)(
             author_telegram_id=str(user.id),
@@ -134,6 +144,7 @@ class Command(BaseCommand):
             message_id=str(message.message_id),
             chat_id=str(message.chat.id),
             chat_title=message.chat.title or message.chat.username or '',
+            override_title=title,
         )
 
         await message.reply_text(f'Обращение #{ticket.id} создано.')
@@ -148,7 +159,7 @@ class Command(BaseCommand):
             return UserTelegramAccess.objects.filter(telegram_user_id=telegram_id_str, is_allowed=True).exists()
         return await sync_to_async(_check)()
 
-    def _create_ticket_sync(self, author_telegram_id: str, text: str, external_client_id: str | None, created_at_override, message_id: str | None, chat_id: str | None = None, chat_title: str | None = None):
+    def _create_ticket_sync(self, author_telegram_id: str, text: str, external_client_id: str | None, created_at_override, message_id: str | None, chat_id: str | None = None, chat_title: str | None = None, override_title: str | None = None):
         with transaction.atomic():
             # Пользователь-создатель — по профилю телеграм
             # Пытаемся найти по множественным доступам
@@ -181,7 +192,7 @@ class Command(BaseCommand):
                     client = Client.objects.create(name='Неизвестный клиент')
 
             ticket = Ticket(
-                title=text[:100] if text else 'Сообщение из Telegram',
+                title=(override_title if override_title else (text[:100] if text else 'Сообщение из Telegram')),
                 description=text,
                 category=category,
                 client=client,
@@ -217,5 +228,28 @@ class Command(BaseCommand):
             media_type=media_type,
             message_date=(timezone.make_aware(message.date) if timezone.is_naive(message.date) else message.date),
         )
+
+    def _should_log_to_stream(self, message) -> bool:
+        """Определяет, нужно ли писать сообщение в поток.
+        - Личные чаты: не логируем
+        - Группы/каналы: логируем только если группа не заблокирована и включена запись в поток
+        При первом попадании неизвестной группы — создаём запись с write_to_stream=True по умолчанию.
+        """
+        chat = message.chat
+        chat_type = (chat.type or '').lower()
+        if chat_type == 'private':
+            return False
+        chat_id = str(chat.id)
+        title = chat.title or chat.username or ''
+        grp, created = TelegramGroup.objects.get_or_create(chat_id=chat_id, defaults={
+            'title': title,
+            'is_blocked': False,
+            'write_to_stream': True,
+        })
+        # Обновим название при необходимости
+        if not created and title and grp.title != title:
+            grp.title = title
+            grp.save(update_fields=['title', 'updated_at'])
+        return (not grp.is_blocked) and grp.write_to_stream
 
 

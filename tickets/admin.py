@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.db.models import Count, Q
 from .models import (
     Category, Client, Organization, TicketStatus, Ticket, TicketAudit, 
-    TicketComment, TicketAttachment, TicketTemplate, UserTelegramAccess, TelegramMessage
+    TicketComment, TicketAttachment, TicketTemplate, UserTelegramAccess, TelegramMessage, TelegramGroup
 )
 
 
@@ -355,6 +355,13 @@ class TelegramMessageAdmin(admin.ModelAdmin):
     def text_short(self, obj):
         return obj.text[:80] + '...' if len(obj.text) > 80 else obj.text
     text_short.short_description = 'Текст'
+
+
+@admin.register(TelegramGroup)
+class TelegramGroupAdmin(admin.ModelAdmin):
+    list_display = ['title', 'chat_id', 'is_blocked', 'write_to_stream', 'updated_at']
+    list_filter = ['is_blocked', 'write_to_stream']
+    search_fields = ['title', 'chat_id']
 
 # Кастомные действия для админки
 @admin.action(description='Взять в работу')
