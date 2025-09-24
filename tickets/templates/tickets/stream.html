@@ -132,7 +132,14 @@
                 </div>
               {% else %}
                 <div class="d-flex flex-wrap gap-1">
-                  <button class="btn btn-success btn-sm" type="submit" name="action" value="create_ticket" data-message-id="{{ m.id }}">Новое обращение</button>
+                  <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#createTicketModal" 
+                          data-message-id="{{ m.id }}" 
+                          data-message-text="{{ m.text|escapejs }}"
+                          data-chat-id="{{ m.chat_id|escapejs }}"
+                          data-chat-title="{{ m.chat_title|escapejs }}"
+                          data-from-username="{{ m.from_username|escapejs }}"
+                          data-from-fullname="{{ m.from_fullname|escapejs }}"
+                          data-from-user-id="{{ m.from_user_id|escapejs }}">Новое обращение</button>
                   <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#commentModal" data-message-id="{{ m.id }}">Комментарий</button>
                   <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#resolveModal" data-message-id="{{ m.id }}">Решение</button>
                 </div>
@@ -247,12 +254,89 @@
     </div>
   </div>
 
+  <!-- Модальное окно подтверждения создания обращения -->
+  <div class="modal fade" id="createTicketModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <form method="post" action="{% url 'tickets:stream' %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_ticket">
+          <input type="hidden" name="message_id" id="createTicketMessageId">
+          <div class="modal-header">
+            <h5 class="modal-title">Создать обращение</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">Тема обращения:</label>
+              <input type="text" class="form-control" name="title" id="createTicketTitle" required>
+            </div>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="mb-3">
+                  <label class="form-label">Клиент:</label>
+                  <div class="autocomplete-container">
+                    <input type="text" class="form-control autocomplete-field" name="client" 
+                           data-autocomplete-url="/tickets/api/clients/" data-autocomplete-min-length="1"
+                           placeholder="Начните вводить клиента..." id="createTicketClient">
+                    <input type="hidden" name="client_id" id="createTicketClientId">
+                    <div class="autocomplete-dropdown" id="createTicketClientDropdown"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="mb-3">
+                  <label class="form-label">Организация:</label>
+                  <div class="autocomplete-container">
+                    <input type="text" class="form-control autocomplete-field" name="organization" 
+                           data-autocomplete-url="/tickets/api/organizations/" data-autocomplete-min-length="1"
+                           placeholder="Начните вводить организацию..." id="createTicketOrganization">
+                    <input type="hidden" name="organization_id" id="createTicketOrganizationId">
+                    <div class="autocomplete-dropdown" id="createTicketOrganizationDropdown"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Категория:</label>
+              <div class="autocomplete-container">
+                <input type="text" class="form-control autocomplete-field" name="category" 
+                       data-autocomplete-url="/tickets/api/categories/" data-autocomplete-min-length="1"
+                       placeholder="Начните вводить категорию..." id="createTicketCategory">
+                <input type="hidden" name="category_id" id="createTicketCategoryId">
+                <div class="autocomplete-dropdown" id="createTicketCategoryDropdown"></div>
+              </div>
+            </div>
+            <div class="alert alert-info">
+              <small>
+                <strong>Текст сообщения:</strong><br>
+                <span id="createTicketMessageText" style="white-space: pre-wrap;"></span>
+              </small>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+            <button type="submit" class="btn btn-success">Создать обращение</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
 </div>
 {% endblock %}
 
 {% block extra_js %}
+{{ active_routes|json_script:"active-routes-data" }}
+{{ clients_map_json|json_script:"clients-map-data" }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+  // Данные активных маршрутов для предзаполнения
+  var activeRoutes = JSON.parse(document.getElementById('active-routes-data').textContent);
+  
+  // Данные клиентов по внешнему ID
+  var clientsMap = JSON.parse(document.getElementById('clients-map-data').textContent);
+  
   var commentModal = document.getElementById('commentModal');
   if (commentModal) {
     commentModal.addEventListener('show.bs.modal', function (event) {
@@ -279,6 +363,188 @@ document.addEventListener('DOMContentLoaded', function() {
       }, 100);
     });
   }
+  
+  // Обработчик для модального окна создания обращения
+  var createTicketModal = document.getElementById('createTicketModal');
+  if (createTicketModal) {
+    createTicketModal.addEventListener('show.bs.modal', function (event) {
+      var button = event.relatedTarget;
+      var messageId = button.getAttribute('data-message-id');
+      var messageText = button.getAttribute('data-message-text');
+      var chatTitle = button.getAttribute('data-chat-title') || '';
+      var fromUsername = button.getAttribute('data-from-username') || '';
+      var fromFullname = button.getAttribute('data-from-fullname') || '';
+      var fromUserId = button.getAttribute('data-from-user-id') || '';
+      var chatId = button.getAttribute('data-chat-id') || '';
+      
+      // Устанавливаем ID сообщения
+      document.getElementById('createTicketMessageId').value = messageId;
+      
+      // Устанавливаем текст сообщения
+      document.getElementById('createTicketMessageText').textContent = messageText;
+      
+      // Сначала определяем клиента по внешнему ID
+      var detectedClient = null;
+      if (fromUserId && clientsMap[fromUserId]) {
+        detectedClient = clientsMap[fromUserId];
+        console.log('Detected client by external ID:', detectedClient);
+      } else {
+        console.log('No client found for external ID:', fromUserId);
+      }
+      
+      // Ищем маршрут с учетом найденного клиента
+      var route = null;
+      if (activeRoutes) {
+        console.log('Looking for route for chatId:', chatId, 'client:', detectedClient);
+        console.log('Available routes:', activeRoutes);
+        
+        // Создаем ключи для поиска маршрута (каскадный поиск с приоритетами)
+        var routeKeys = [];
+        
+        if (detectedClient) {
+          // 1. Самый специфичный: группа + клиент
+          routeKeys.push(chatId + '|' + detectedClient.id + '|no_org');
+        }
+        
+        // 2. Только группа
+        routeKeys.push(chatId + '|no_client|no_org');
+        
+        if (detectedClient) {
+          // 3. Только клиент
+          routeKeys.push('no_group|' + detectedClient.id + '|no_org');
+        }
+        
+        // 4. Общий маршрут
+        routeKeys.push('no_group|no_client|no_org');
+        
+        console.log('Looking for route keys:', routeKeys);
+        
+        // Ищем маршрут по ключам
+        for (var i = 0; i < routeKeys.length; i++) {
+          var routeKey = routeKeys[i];
+          if (activeRoutes[routeKey]) {
+            route = activeRoutes[routeKey];
+            console.log('Found route by key:', routeKey, route);
+            break;
+          }
+        }
+        
+        // Если не нашли по ключам, ищем по условиям
+        if (!route) {
+          for (var key in activeRoutes) {
+            var routeData = activeRoutes[key];
+            var matchesGroup = !routeData.telegram_group_id || routeData.telegram_group_id === chatId;
+            var matchesClient = !routeData.client_id || (detectedClient && routeData.client_id === detectedClient.id);
+            var matchesOrg = !routeData.organization_id; // Пока не используем организацию
+            
+            if (matchesGroup && matchesClient && matchesOrg) {
+              route = routeData;
+              console.log('Found route by conditions:', route);
+              break;
+            }
+          }
+        }
+        
+        if (!route) {
+          console.log('No route found for chatId:', chatId, 'client:', detectedClient);
+        }
+      } else {
+        console.log('No activeRoutes available');
+      }
+      
+      var defaultTitle = '';
+      var defaultCategoryId = '';
+      var defaultCategoryName = '';
+      var defaultPriority = 'normal';
+      
+      if (route) {
+        console.log('Using route settings:', route);
+        
+        // Используем настройки из маршрута
+        defaultCategoryId = route.category_id;
+        defaultCategoryName = route.category_name;
+        defaultPriority = route.priority;
+        
+        // Формируем заголовок по шаблону маршрута
+        var clientName = fromUsername || fromFullname || fromUserId || 'Неизвестный клиент';
+        var groupName = chatTitle || 'Неизвестная группа';
+        
+        // Форматируем дату (простая версия)
+        var now = new Date();
+        var formattedDate = now.getDate().toString().padStart(2, '0') + '.' + 
+                           (now.getMonth() + 1).toString().padStart(2, '0') + '.' + 
+                           now.getFullYear() + ' ' +
+                           now.getHours().toString().padStart(2, '0') + ':' +
+                           now.getMinutes().toString().padStart(2, '0');
+        
+        // Подставляем переменные в шаблон
+        defaultTitle = route.title_template
+          .replace(/{group_name}/g, groupName)
+          .replace(/{client_name}/g, clientName)
+          .replace(/{message_id}/g, messageId || 'N/A')
+          .replace(/{message_date}/g, formattedDate);
+          
+        console.log('Generated title from route:', defaultTitle);
+        console.log('Route category:', defaultCategoryName, 'ID:', defaultCategoryId);
+        console.log('Route priority:', defaultPriority);
+      } else {
+        console.log('No route found, using default logic');
+        
+        // Используем стандартную логику
+        defaultTitle = 'Создано из группы ' + (chatTitle || 'Неизвестная группа');
+        var authorName = fromUsername || fromFullname || fromUserId || 'Неизвестный';
+        defaultTitle += ' по сообщению от ' + authorName;
+        
+        // Используем категорию по умолчанию
+        {% if default_category %}
+        defaultCategoryId = '{{ default_category.id }}';
+        defaultCategoryName = '{{ default_category.name }}';
+        {% endif %}
+        
+        console.log('Generated default title:', defaultTitle);
+      }
+      
+      // Устанавливаем заголовок
+      document.getElementById('createTicketTitle').value = defaultTitle;
+      console.log('Set title field to:', defaultTitle);
+      
+      // Предзаполняем клиента
+      if (detectedClient) {
+        document.getElementById('createTicketClient').value = detectedClient.name;
+        document.getElementById('createTicketClientId').value = detectedClient.id;
+        console.log('Set client field to:', detectedClient.name, 'ID:', detectedClient.id);
+      } else {
+        document.getElementById('createTicketClient').value = '';
+        document.getElementById('createTicketClientId').value = '';
+        console.log('No client to prefill');
+      }
+      
+      // Организация не выбрана по умолчанию
+      document.getElementById('createTicketOrganization').value = '';
+      document.getElementById('createTicketOrganizationId').value = '';
+      
+      // Предзаполняем категорию
+      document.getElementById('createTicketCategory').value = defaultCategoryName;
+      document.getElementById('createTicketCategoryId').value = defaultCategoryId;
+      console.log('Set category field to:', defaultCategoryName, 'ID:', defaultCategoryId);
+      
+      // Инициализируем автокомплиты при открытии модального окна
+      setTimeout(() => {
+        initAutocomplete('createTicketClient', 'createTicketClientId', 'createTicketClientDropdown', '/tickets/api/clients/');
+        initAutocomplete('createTicketOrganization', 'createTicketOrganizationId', 'createTicketOrganizationDropdown', '/tickets/api/organizations/');
+        initAutocomplete('createTicketCategory', 'createTicketCategoryId', 'createTicketCategoryDropdown', '/tickets/api/categories/');
+        
+        // Пытаемся найти клиента по внешнему ID
+        if (fromUserId) {
+          // Здесь можно добавить логику для автоматического поиска клиента
+          // Пока оставляем пустым, пользователь сможет выбрать вручную
+        }
+      }, 100);
+      
+      console.log('Modal opened, fields should be prefilled');
+    });
+  }
+  
   var bulkForm = document.getElementById('bulkCommentForm');
   if (bulkForm) {
     bulkForm.addEventListener('submit', function() {
@@ -364,6 +630,86 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Автокомплит для выбора тикетов
+// Универсальная функция автокомплита
+function initAutocomplete(inputId, hiddenId, dropdownId, apiUrl) {
+  const input = document.getElementById(inputId);
+  const hidden = document.getElementById(hiddenId);
+  const dropdown = document.getElementById(dropdownId);
+  
+  if (!input || !hidden || !dropdown) {
+    console.error('Missing elements for autocomplete:', {inputId, hiddenId, dropdownId});
+    return;
+  }
+  
+  // Проверяем, не инициализирован ли уже автокомплит
+  if (input.hasAttribute('data-autocomplete-initialized')) {
+    return;
+  }
+  input.setAttribute('data-autocomplete-initialized', 'true');
+  
+  let timeout;
+  
+  // Функция для загрузки данных
+  function loadData(query = '') {
+    clearTimeout(timeout);
+    
+    timeout = setTimeout(() => {
+      const url = query ? `${apiUrl}?q=${encodeURIComponent(query)}` : apiUrl;
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          dropdown.innerHTML = '';
+          
+          if (data.results && data.results.length > 0) {
+            dropdown.style.display = 'block';
+            
+            data.results.forEach(item => {
+              const div = document.createElement('div');
+              div.className = 'autocomplete-item';
+              div.textContent = item.text || item.name;
+              div.addEventListener('click', () => {
+                input.value = item.text || item.name;
+                hidden.value = item.id;
+                dropdown.style.display = 'none';
+              });
+              dropdown.appendChild(div);
+            });
+          } else {
+            dropdown.style.display = 'none';
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching data:', error);
+          dropdown.style.display = 'none';
+        });
+    }, 300);
+  }
+
+  // Показать список при клике на поле (если пустое)
+  input.addEventListener('focus', function() {
+    if (!this.value.trim()) {
+      loadData();
+    }
+  });
+
+  // Фильтровать при вводе
+  input.addEventListener('input', function() {
+    const query = this.value.trim();
+    if (query) {
+      loadData(query);
+    } else {
+      loadData();
+    }
+  });
+  
+  // Скрыть dropdown при клике вне его
+  document.addEventListener('click', function(e) {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+}
+
 function initTicketAutocomplete(inputId, hiddenId, dropdownId, apiUrl) {
   const input = document.getElementById(inputId);
   const hidden = document.getElementById(hiddenId);

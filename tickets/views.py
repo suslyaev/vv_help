@@ -10,7 +10,7 @@ from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-from .models import Ticket, Category, Client, Organization, TicketStatus, TicketComment, TicketTemplate, TicketAudit, TicketAttachment, TelegramMessage
+from .models import Ticket, Category, Client, Organization, TicketStatus, TicketComment, TicketTemplate, TicketAudit, TicketAttachment, TelegramMessage, TelegramRoute
 from .forms import TicketForm, TicketCommentForm, ClientForm, TicketAttachmentForm, OrganizationForm
 
 
@@ -1128,24 +1128,90 @@ def stream(request):
         msg_id = request.POST.get('message_id')
         msg = get_object_or_404(TelegramMessage, id=msg_id)
 
-        # Поиск клиента по from_user_id
-        client = Client.objects.filter(external_id=msg.from_user_id).first()
-        if not client:
-            client = Client.objects.filter(name='Неизвестный клиент').first()
-            if not client:
-                client = Client.objects.create(name='Неизвестный клиент')
+        # Получаем данные из формы модального окна
+        title = request.POST.get('title', '').strip()
+        client_id = request.POST.get('client_id')
+        organization_id = request.POST.get('organization_id')
+        category_id = request.POST.get('category_id')
 
-        # Категория и статус по умолчанию
-        category = Category.objects.filter(name__icontains='Обращения от поставщиков', parent__isnull=True).first() or Category.objects.first()
+        # Поиск клиента
+        client = None
+        if client_id:
+            try:
+                client = Client.objects.get(id=client_id)
+            except Client.DoesNotExist:
+                pass
+        
+        # Если клиент не найден, ищем по from_user_id или создаем неизвестного
+        if not client:
+            client = Client.objects.filter(external_id=msg.from_user_id).first()
+            if not client:
+                client = Client.objects.filter(name='Неизвестный клиент').first()
+                if not client:
+                    client = Client.objects.create(name='Неизвестный клиент')
+
+        # Поиск организации
+        organization = None
+        if organization_id:
+            try:
+                organization = Organization.objects.get(id=organization_id)
+            except Organization.DoesNotExist:
+                pass
+
+        # Поиск маршрута для этой группы, клиента и организации
+        route = None
+        try:
+            from .models import TelegramGroup
+            telegram_group = TelegramGroup.objects.filter(chat_id=msg.chat_id).first()
+            route = TelegramRoute.find_route(telegram_group=telegram_group, client=client, organization=organization)
+        except:
+            pass
+
+        # Определяем категорию и приоритет
+        category = None
+        priority = 'normal'
+        
+        if route:
+            # Используем настройки из маршрута
+            category = route.category
+            priority = route.priority
+            
+            # Формируем заголовок по шаблону маршрута
+            client_name = client.name if client else 'Неизвестный клиент'
+            group_name = msg.chat_title or 'Неизвестная группа'
+            
+            if not title:  # Если заголовок не задан вручную
+                title = route.format_title(
+                    group_name=group_name,
+                    client_name=client_name,
+                    message_id=msg.message_id,
+                    message_date=msg.message_date
+                )
+        else:
+            # Используем логику по умолчанию
+            if category_id:
+                try:
+                    category = Category.objects.get(id=category_id)
+                except Category.DoesNotExist:
+                    pass
+            
+            if not category:
+                category = Category.objects.filter(name__icontains='Обращения от поставщиков', parent__isnull=True).first() or Category.objects.first()
+            
+            if not title:
+                title = msg.text[:100] if msg.text else 'Сообщение из Telegram'
+
+        # Статус по умолчанию
         status = TicketStatus.objects.filter(is_final=False).order_by('order').first() or TicketStatus.objects.first()
 
         ticket = Ticket(
-            title=msg.text[:100] if msg.text else 'Сообщение из Telegram',
+            title=title,
             description=msg.text,
             category=category,
             client=client,
+            organization=organization,
             status=status,
-            priority='normal',
+            priority=priority,
             created_by=request.user,
         )
         ticket.external_message_id = msg.message_id
@@ -1159,7 +1225,9 @@ def stream(request):
         msg.processed_at = timezone.now()
         msg.save(update_fields=['linked_ticket', 'linked_action', 'processed_at'])
 
-        messages.success(request, mark_safe(f'Создано обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a>'))
+        # Добавляем информацию о маршруте в сообщение
+        route_info = f' (через маршрут "{route.name}")' if route else ''
+        messages.success(request, mark_safe(f'Создано обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a>{route_info}'))
         return redirect('tickets:stream')
 
     # Действие: решить обращение по сообщению
@@ -1398,6 +1466,32 @@ def stream(request):
         if group:
             group_name = group.title or group.chat_id
 
+    # Данные для предзаполнения модального окна создания обращения
+    default_category = Category.objects.filter(name__icontains='Обращения от поставщиков', parent__isnull=True).first() or Category.objects.first()
+    unknown_client = Client.objects.filter(name='Неизвестный клиент').first()
+    
+    # Загружаем активные маршруты для предзаполнения
+    active_routes = {}
+    try:
+        from .models import TelegramGroup
+        routes = TelegramRoute.objects.filter(is_active=True).select_related('telegram_group', 'category', 'client', 'organization')
+        for route in routes:
+            # Создаем ключ для маршрута на основе условий
+            route_key = f"{route.telegram_group.chat_id if route.telegram_group else 'no_group'}|{route.client.id if route.client else 'no_client'}|{route.organization.id if route.organization else 'no_org'}"
+            active_routes[route_key] = {
+                'id': route.id,
+                'name': route.name,
+                'title_template': route.title_template,
+                'category_id': route.category.id,
+                'category_name': route.category.name,
+                'priority': route.priority,
+                'telegram_group_id': route.telegram_group.chat_id if route.telegram_group else None,
+                'client_id': route.client.id if route.client else None,
+                'organization_id': route.organization.id if route.organization else None,
+            }
+    except:
+        pass
+    
     context = {
         'page_obj': page_obj,
         'filters': {
@@ -1409,6 +1503,10 @@ def stream(request):
         'clients_map': clients_map,
         'uta_map': uta_map,
         'reply_messages_map': reply_messages_map,
+        'default_category': default_category,
+        'unknown_client': unknown_client,
+        'active_routes': active_routes,
+        'clients_map_json': {str(k): {'id': v.id, 'name': v.name} for k, v in clients_map.items()},
     }
     return render(request, 'tickets/stream.html', context)
 

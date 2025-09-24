@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.db.models import Count, Q
 from .models import (
     Category, Client, Organization, TicketStatus, Ticket, TicketAudit, 
-    TicketComment, TicketAttachment, TicketTemplate, UserTelegramAccess, TelegramMessage, TelegramGroup
+    TicketComment, TicketAttachment, TicketTemplate, UserTelegramAccess, TelegramMessage, TelegramGroup, TelegramRoute
 )
 
 
@@ -401,3 +401,34 @@ def close_tickets(modeladmin, request, queryset):
 
 # Добавляем действия к админке обращений
 TicketAdmin.actions = [take_tickets, close_tickets]
+
+
+@admin.register(TelegramRoute)
+class TelegramRouteAdmin(admin.ModelAdmin):
+    list_display = ['name', 'telegram_group', 'client', 'organization', 'category', 'priority', 'is_active', 'created_at']
+    list_filter = ['is_active', 'priority', 'category', 'created_at']
+    search_fields = ['name', 'telegram_group__title', 'telegram_group__chat_id', 'client__name', 'organization__name', 'title_template']
+    list_editable = ['is_active', 'priority']
+    autocomplete_fields = ['telegram_group', 'client', 'organization', 'category']
+    
+    fieldsets = (
+        ('Основная информация', {
+            'fields': ('name', 'is_active')
+        }),
+        ('Условия применения', {
+            'fields': ('telegram_group', 'client', 'organization'),
+            'description': 'Маршрут будет применяться, если все указанные условия совпадают. Можно указать любое сочетание условий.'
+        }),
+        ('Настройки обращения', {
+            'fields': ('title_template', 'category', 'priority')
+        }),
+        ('Метаданные', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    readonly_fields = ['created_at', 'updated_at']
+    
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('telegram_group', 'client', 'organization', 'category')

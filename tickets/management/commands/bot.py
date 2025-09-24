@@ -127,15 +127,7 @@ class Command(BaseCommand):
                 pass
             return
 
-        # Заголовок тикета: если личка — укажем, из какой группы переслано (если есть)
-        title = text[:100] if text else 'Сообщение из Telegram'
-        group_title = ''
-        if getattr(message, 'forward_from_chat', None):
-            group_title = message.forward_from_chat.title or message.forward_from_chat.username or ''
-        if group_title:
-            title = f"Создано из группы {group_title}"
-
-        # Создаём тикет
+        # Создаём тикет (заголовок будет сформирован по шаблону маршрута)
         ticket = await sync_to_async(self._create_ticket_sync)(
             author_telegram_id=str(user.id),
             text=text,
@@ -144,7 +136,7 @@ class Command(BaseCommand):
             message_id=str(message.message_id),
             chat_id=str(message.chat.id),
             chat_title=message.chat.title or message.chat.username or '',
-            override_title=title,
+            override_title=None,  # Не передаем override_title, чтобы использовался шаблон маршрута
         )
 
         await message.reply_text(f'Обращение #{ticket.id} создано.')
@@ -172,15 +164,7 @@ class Command(BaseCommand):
                 # Фолбэк: берём первого суперпользователя/админа
                 creator = User.objects.filter(is_staff=True).first() or User.objects.first()
 
-            # Категория — родительская "Обращения от поставщиков"
-            category = (
-                Category.objects.filter(name__icontains='Обращения от поставщиков', parent__isnull=True).first()
-                or Category.objects.first()
-            )
-
-            # Статус новый — возьмём первый не финальный
-            status = TicketStatus.objects.filter(is_final=False).order_by('order').first() or TicketStatus.objects.first()
-
+            # Определяем клиента
             client = None
             if external_client_id:
                 client = Client.objects.filter(external_id=external_client_id).first()
@@ -191,13 +175,54 @@ class Command(BaseCommand):
                 if not client:
                     client = Client.objects.create(name='Неизвестный клиент')
 
+            # Определяем группу Telegram
+            telegram_group = None
+            if chat_id:
+                from tickets.models import TelegramGroup
+                telegram_group = TelegramGroup.objects.filter(chat_id=chat_id).first()
+
+            # Ищем подходящий маршрут
+            from tickets.models import TelegramRoute
+            route = TelegramRoute.find_route(telegram_group=telegram_group, client=client, organization=None)
+
+            # Определяем категорию и приоритет из маршрута или используем значения по умолчанию
+            if route:
+                category = route.category
+                priority = route.priority
+                # Формируем заголовок по шаблону маршрута
+                if not override_title:
+                    client_name = client.name if client else 'Неизвестный клиент'
+                    group_name = chat_title or 'Неизвестная группа'
+                    message_id_str = message_id or 'N/A'
+                    message_date = created_at_override or timezone.now()
+                    
+                    title = route.format_title(
+                        group_name=group_name,
+                        client_name=client_name,
+                        message_id=message_id_str,
+                        message_date=message_date
+                    )
+                else:
+                    title = override_title
+            else:
+                # Используем значения по умолчанию
+                category = (
+                    Category.objects.filter(name__icontains='Обращения от поставщиков', parent__isnull=True).first()
+                    or Category.objects.first()
+                )
+                priority = 'normal'
+                title = (override_title if override_title else (text[:100] if text else 'Сообщение из Telegram'))
+
+            # Статус новый — возьмём первый не финальный
+            status = TicketStatus.objects.filter(is_final=False).order_by('order').first() or TicketStatus.objects.first()
+
             ticket = Ticket(
-                title=(override_title if override_title else (text[:100] if text else 'Сообщение из Telegram')),
+                title=title,
                 description=text,
                 category=category,
                 client=client,
                 status=status,
-                priority='normal',
+                priority=priority,
                 created_by=creator,
             )
             if message_id:

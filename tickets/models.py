@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.core.validators import MinValueValidator
+from django.db.models import Q
 
 
 class Category(models.Model):
@@ -378,3 +379,168 @@ class TelegramGroup(models.Model):
 
     def __str__(self) -> str:
         return f"{self.title or self.chat_id}"
+
+
+class TelegramRoute(models.Model):
+    """Маршруты Telegram для автоматизации создания обращений
+    
+    Определяет правила создания обращений из сообщений Telegram:
+    - Какая группа обрабатывается
+    - Как формируется тема обращения
+    - Какая категория и приоритет используются
+    """
+    
+    PRIORITY_CHOICES = [
+        ('low', 'Низкий'),
+        ('normal', 'Обычный'),
+        ('high', 'Высокий'),
+        ('urgent', 'Срочный'),
+    ]
+    
+    name = models.CharField('Название маршрута', max_length=255, help_text='Название для идентификации маршрута')
+    
+    # Условия применения маршрута (могут работать как вместе, так и отдельно)
+    telegram_group = models.ForeignKey(TelegramGroup, on_delete=models.CASCADE, verbose_name='Группа Telegram', 
+                                     null=True, blank=True, help_text='Группа, для которой действует этот маршрут (опционально)')
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, verbose_name='Клиент', 
+                             null=True, blank=True, help_text='Клиент, для которого действует этот маршрут (опционально)')
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, verbose_name='Организация', 
+                                   null=True, blank=True, help_text='Организация, для которой действует этот маршрут (опционально)')
+    
+    # Шаблон темы с переменными
+    title_template = models.CharField('Шаблон темы', max_length=500, 
+                                    help_text='Шаблон темы обращения. Доступные переменные: {group_name}, {client_name}, {message_id}, {message_date}')
+    
+    # Настройки обращения
+    category = models.ForeignKey(Category, on_delete=models.PROTECT, verbose_name='Категория', 
+                               help_text='Категория для создаваемых обращений')
+    priority = models.CharField('Приоритет', max_length=10, choices=PRIORITY_CHOICES, default='normal',
+                               help_text='Приоритет для создаваемых обращений')
+    
+    # Настройки активности
+    is_active = models.BooleanField('Активен', default=True, help_text='Активные маршруты применяются автоматически')
+    
+    # Метаданные
+    created_at = models.DateTimeField('Создано', auto_now_add=True)
+    updated_at = models.DateTimeField('Обновлено', auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Маршрут Telegram'
+        verbose_name_plural = 'Маршруты Telegram'
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['telegram_group', 'is_active']),
+        ]
+    
+    def __str__(self) -> str:
+        parts = [self.name]
+        if self.telegram_group:
+            parts.append(f"Группа: {self.telegram_group.title or self.telegram_group.chat_id}")
+        if self.client:
+            parts.append(f"Клиент: {self.client.name}")
+        if self.organization:
+            parts.append(f"Организация: {self.organization.name}")
+        return " | ".join(parts)
+    
+    @classmethod
+    def find_route(cls, telegram_group=None, client=None, organization=None):
+        """Находит подходящий маршрут по заданным условиям с приоритетами"""
+        routes = cls.objects.filter(is_active=True)
+        
+        # Каскадный поиск с приоритетами
+        # 1. Самый специфичный: группа + клиент + организация
+        if telegram_group and client and organization:
+            route = routes.filter(
+                telegram_group=telegram_group,
+                client=client,
+                organization=organization
+            ).first()
+            if route:
+                return route
+        
+        # 2. Группа + клиент
+        if telegram_group and client:
+            route = routes.filter(
+                telegram_group=telegram_group,
+                client=client,
+                organization__isnull=True
+            ).first()
+            if route:
+                return route
+        
+        # 3. Группа + организация
+        if telegram_group and organization:
+            route = routes.filter(
+                telegram_group=telegram_group,
+                client__isnull=True,
+                organization=organization
+            ).first()
+            if route:
+                return route
+        
+        # 4. Клиент + организация
+        if client and organization:
+            route = routes.filter(
+                telegram_group__isnull=True,
+                client=client,
+                organization=organization
+            ).first()
+            if route:
+                return route
+        
+        # 5. Только группа
+        if telegram_group:
+            route = routes.filter(
+                telegram_group=telegram_group,
+                client__isnull=True,
+                organization__isnull=True
+            ).first()
+            if route:
+                return route
+        
+        # 6. Только клиент
+        if client:
+            route = routes.filter(
+                telegram_group__isnull=True,
+                client=client,
+                organization__isnull=True
+            ).first()
+            if route:
+                return route
+        
+        # 7. Только организация
+        if organization:
+            route = routes.filter(
+                telegram_group__isnull=True,
+                client__isnull=True,
+                organization=organization
+            ).first()
+            if route:
+                return route
+        
+        # 8. Общий маршрут (без условий)
+        return routes.filter(
+            telegram_group__isnull=True,
+            client__isnull=True,
+            organization__isnull=True
+        ).first()
+    
+    def format_title(self, group_name: str, client_name: str, message_id: str, message_date) -> str:
+        """Форматирует шаблон темы с подстановкой переменных"""
+        from django.utils.dateformat import format
+        
+        # Форматируем дату
+        if hasattr(message_date, 'strftime'):
+            formatted_date = message_date.strftime('%d.%m.%Y %H:%M')
+        else:
+            formatted_date = str(message_date)
+        
+        # Подставляем переменные
+        title = self.title_template.format(
+            group_name=group_name or 'Неизвестная группа',
+            client_name=client_name or 'Неизвестный клиент',
+            message_id=message_id or 'N/A',
+            message_date=formatted_date
+        )
+        
+        return title
