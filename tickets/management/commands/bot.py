@@ -247,19 +247,37 @@ class Command(BaseCommand):
         if getattr(message, 'reply_to_message', None):
             reply_to_message_id = str(message.reply_to_message.message_id)
 
-        # Создаем сообщение в потоке
-        telegram_message = TelegramMessage.objects.create(
+        # Проверяем, существует ли уже сообщение с таким ID
+        existing_message = TelegramMessage.objects.filter(
             message_id=str(message.message_id),
-            reply_to_message_id=reply_to_message_id,
-            chat_id=chat_id,
-            chat_title=chat_title,
-            from_user_id=str(from_user.id) if from_user else '',
-            from_username=(from_user.username if from_user and from_user.username else ''),
-            from_fullname=(from_user.full_name if from_user else ''),
-            text=text,
-            media_type=media_type,
-            message_date=(timezone.make_aware(message.date) if timezone.is_naive(message.date) else message.date),
-        )
+            chat_id=chat_id
+        ).first()
+
+        if existing_message:
+            # Обновляем существующее сообщение
+            existing_message.text = text
+            existing_message.media_type = media_type
+            existing_message.from_username = (from_user.username if from_user and from_user.username else '')
+            existing_message.from_fullname = (from_user.full_name if from_user else '')
+            existing_message.message_date = (timezone.make_aware(message.date) if timezone.is_naive(message.date) else message.date)
+            existing_message.save()
+            telegram_message = existing_message
+            logging.info(f"Updated existing Telegram message: {message.message_id} in chat {chat_id}")
+        else:
+            # Создаем новое сообщение в потоке
+            telegram_message = TelegramMessage.objects.create(
+                message_id=str(message.message_id),
+                reply_to_message_id=reply_to_message_id,
+                chat_id=chat_id,
+                chat_title=chat_title,
+                from_user_id=str(from_user.id) if from_user else '',
+                from_username=(from_user.username if from_user and from_user.username else ''),
+                from_fullname=(from_user.full_name if from_user else ''),
+                text=text,
+                media_type=media_type,
+                message_date=(timezone.make_aware(message.date) if timezone.is_naive(message.date) else message.date),
+            )
+            logging.info(f"Created new Telegram message: {message.message_id} in chat {chat_id}")
 
         # Если это ответ на сообщение, проверяем, связано ли исходное сообщение с комментарием
         if reply_to_message_id:
