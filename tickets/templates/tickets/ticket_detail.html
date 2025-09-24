@@ -309,7 +309,7 @@
                         {% endif %}
                     </div>
                     
-                    <div class="mb-3">
+                    <div class="mb-3" id="internal-comment-field">
                         <div class="form-check">
                             {{ comment_form.is_internal|add_class:"form-check-input" }}
                             <label class="form-check-label" for="{{ comment_form.is_internal.id_for_label }}">
@@ -321,7 +321,7 @@
                     {% if ticket.telegram_chat_id and ticket.external_message_id %}
                     {% with can_reply_in_telegram=can_reply_in_telegram %}
                         {% if can_reply_in_telegram %}
-                        <div class="mb-3">
+                        <div class="mb-3" id="telegram-reply-field">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" name="reply_in_chat" id="reply_in_chat" value="1">
                                 <label class="form-check-label" for="reply_in_chat">
@@ -512,20 +512,37 @@
 document.addEventListener('DOMContentLoaded', function() {
     const authorTypeSelect = document.getElementById('{{ comment_form.author_type.id_for_label }}');
     const clientField = document.getElementById('client-author-field');
+    const internalCommentField = document.getElementById('internal-comment-field');
+    const telegramReplyField = document.getElementById('telegram-reply-field');
     
-    function toggleClientField() {
+    function toggleFields() {
         if (authorTypeSelect.value === 'client') {
             clientField.style.display = 'block';
+            // Скрываем поля для клиентов
+            internalCommentField.style.display = 'none';
+            if (telegramReplyField) {
+                telegramReplyField.style.display = 'none';
+            }
+            // Снимаем галочки
+            document.getElementById('{{ comment_form.is_internal.id_for_label }}').checked = false;
+            if (document.getElementById('reply_in_chat')) {
+                document.getElementById('reply_in_chat').checked = false;
+            }
         } else {
             clientField.style.display = 'none';
+            // Показываем поля для системных пользователей
+            internalCommentField.style.display = 'block';
+            if (telegramReplyField) {
+                telegramReplyField.style.display = 'block';
+            }
         }
     }
     
     // Инициализация
-    toggleClientField();
+    toggleFields();
     
     // Обработчик изменения
-    authorTypeSelect.addEventListener('change', toggleClientField);
+    authorTypeSelect.addEventListener('change', toggleFields);
 });
 
 // Функция для показа модального окна ответа

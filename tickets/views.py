@@ -163,10 +163,15 @@ def ticket_detail(request, ticket_id):
                     comment.author = request.user
                     comment.author_client = None  # Очищаем автора-клиента
                 
+                # Клиенты не могут создавать внутренние комментарии
+                if comment.author_type == 'client':
+                    comment.is_internal = False
+                
                 comment.save()
                 
                 # Проверяем, нужно ли отправить комментарий в Telegram
-                reply_in_chat = request.POST.get('reply_in_chat') == '1'
+                # Отправляем в Telegram только если автор - системный пользователь
+                reply_in_chat = request.POST.get('reply_in_chat') == '1' and comment.author_type == 'user'
                 if reply_in_chat and ticket.telegram_chat_id and ticket.external_message_id:
                     try:
                         import logging
@@ -729,7 +734,18 @@ def delete_resolution(request, ticket_id):
             from django.conf import settings
             
             logger = logging.getLogger(__name__)
-            logger.info(f"Attempting to delete Telegram resolution: chat_id={ticket.telegram_chat_id}, message_id={ticket.external_message_id}")
+            # Находим сообщение с решением в потоке
+            resolution_message = TelegramMessage.objects.filter(
+                chat_id=ticket.telegram_chat_id,
+                linked_ticket=ticket,
+                linked_action='resolve_ticket'
+            ).first()
+            
+            if not resolution_message:
+                messages.error(request, 'Сообщение с решением не найдено в потоке')
+                return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+            
+            logger.info(f"Attempting to delete Telegram resolution: chat_id={ticket.telegram_chat_id}, message_id={resolution_message.message_id}")
             
             bot_token = getattr(settings, 'TELEGRAM_BOT_TOKEN', None)
             if bot_token:
@@ -738,23 +754,18 @@ def delete_resolution(request, ticket_id):
                     application = Application.builder().token(bot_token).build()
                     result = await application.bot.delete_message(
                         chat_id=ticket.telegram_chat_id,
-                        message_id=int(ticket.external_message_id)
+                        message_id=int(resolution_message.message_id)
                     )
                     return result
                 
                 # Запускаем асинхронную функцию
                 result = asyncio.run(delete_telegram_message())
-                logger.info(f"Telegram message deleted successfully: {ticket.external_message_id}")
+                logger.info(f"Telegram message deleted successfully: {resolution_message.message_id}")
                 
                 # Удаляем сообщение из потока
                 try:
-                    telegram_message = TelegramMessage.objects.filter(
-                        message_id=ticket.external_message_id,
-                        chat_id=ticket.telegram_chat_id,
-                        linked_ticket=ticket,
-                        linked_action='resolve_ticket'
-                    ).delete()
-                    logger.info(f"Deleted resolution message from stream: {ticket.external_message_id}")
+                    resolution_message.delete()
+                    logger.info(f"Deleted resolution message from stream: {resolution_message.message_id}")
                 except Exception as stream_error:
                     logger.error(f"Failed to delete resolution message from stream: {stream_error}", exc_info=True)
                 
@@ -777,12 +788,8 @@ def delete_resolution(request, ticket_id):
                 logger.error("TELEGRAM_BOT_TOKEN not configured")
                 
                 # Удаляем только сообщение из потока и очищаем решение
-                TelegramMessage.objects.filter(
-                    message_id=ticket.external_message_id,
-                    chat_id=ticket.telegram_chat_id,
-                    linked_ticket=ticket,
-                    linked_action='resolve_ticket'
-                ).delete()
+                if resolution_message:
+                    resolution_message.delete()
                 
                 ticket.resolution = ''
                 ticket.resolved_at = None
@@ -1213,7 +1220,18 @@ def edit_resolution(request, ticket_id):
                 from django.conf import settings
                 
                 logger = logging.getLogger(__name__)
-                logger.info(f"Attempting to edit Telegram message: chat_id={ticket.telegram_chat_id}, message_id={ticket.external_message_id}")
+                # Находим сообщение с решением в потоке
+                resolution_message = TelegramMessage.objects.filter(
+                    chat_id=ticket.telegram_chat_id,
+                    linked_ticket=ticket,
+                    linked_action='resolve_ticket'
+                ).first()
+                
+                if not resolution_message:
+                    messages.error(request, 'Сообщение с решением не найдено в потоке')
+                    return redirect('tickets:ticket_detail', ticket_id=ticket.id)
+                
+                logger.info(f"Attempting to edit Telegram message: chat_id={ticket.telegram_chat_id}, message_id={resolution_message.message_id}")
                 
                 bot_token = getattr(settings, 'TELEGRAM_BOT_TOKEN', None)
                 if bot_token:
@@ -1221,16 +1239,25 @@ def edit_resolution(request, ticket_id):
                     async def edit_telegram_message():
                         application = Application.builder().token(bot_token).build()
                         try:
-                            # Пытаемся отредактировать существующее сообщение
+                            # Пытаемся отредактировать существующее сообщение с решением
                             result = await application.bot.edit_message_text(
                                 chat_id=ticket.telegram_chat_id,
-                                message_id=int(ticket.external_message_id),
+                                message_id=int(resolution_message.message_id),
                                 text=new_resolution
                             )
                             return result, 'edited'
                         except Exception as edit_error:
-                            # Если не удалось отредактировать, отправляем новое сообщение как ответ
-                            logger.warning(f"Could not edit message, sending new one: {edit_error}")
+                            # Если не удалось отредактировать, удаляем старое сообщение и отправляем новое
+                            logger.warning(f"Could not edit message, deleting old and sending new one: {edit_error}")
+                            try:
+                                await application.bot.delete_message(
+                                    chat_id=ticket.telegram_chat_id,
+                                    message_id=int(resolution_message.message_id)
+                                )
+                                logger.info(f"Deleted old resolution message: {resolution_message.message_id}")
+                            except Exception as delete_error:
+                                logger.warning(f"Could not delete old message: {delete_error}")
+                            
                             result = await application.bot.send_message(
                                 chat_id=ticket.telegram_chat_id,
                                 text=new_resolution,
@@ -1248,7 +1275,6 @@ def edit_resolution(request, ticket_id):
                             # Обновляем существующее сообщение
                             telegram_message = TelegramMessage.objects.filter(
                                 chat_id=ticket.telegram_chat_id,
-                                message_id=ticket.external_message_id,
                                 linked_ticket=ticket,
                                 linked_action='resolve_ticket'
                             ).first()
@@ -1258,7 +1284,11 @@ def edit_resolution(request, ticket_id):
                                 telegram_message.save()
                                 logger.info(f"Updated resolution message in stream: {telegram_message.id}")
                         else:
-                            # Добавляем новое сообщение в поток
+                            # Удаляем старое сообщение из потока и добавляем новое
+                            old_message_id = resolution_message.message_id
+                            resolution_message.delete()
+                            logger.info(f"Deleted old resolution message from stream: {old_message_id}")
+                            
                             TelegramMessage.objects.create(
                                 message_id=str(result.message_id),
                                 chat_id=str(ticket.telegram_chat_id),
