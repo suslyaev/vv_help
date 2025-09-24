@@ -27,6 +27,12 @@ urlpatterns = [
     path('clients/<int:client_id>/', views.client_detail, name='client_detail'),
     path('clients/<int:client_id>/edit/', views.client_edit, name='client_edit'),
     
+    # Организации
+    path('organizations/', views.organization_list, name='organization_list'),
+    path('organizations/create/', views.organization_create, name='organization_create'),
+    path('organizations/<int:organization_id>/', views.organization_detail, name='organization_detail'),
+    path('organizations/<int:organization_id>/edit/', views.organization_edit, name='organization_edit'),
+    
     # Аналитика
     path('analytics/', views.analytics, name='analytics'),
     path('analytics/export/', views.analytics_export_xlsx, name='analytics_export_xlsx'),

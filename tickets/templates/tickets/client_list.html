@@ -19,7 +19,7 @@
         <form method="get" class="row g-3">
             <div class="col-md-8">
                 <input type="text" class="form-control" name="search" 
-                       value="{{ search_query|default_if_none:'' }}" placeholder="Введите что-то...">
+                       value="{{ search_query|default_if_none:'' }}" placeholder="Введите имя клиента или контактное лицо...">
             </div>
             <div class="col-md-4">
                 <button type="submit" class="btn btn-primary">Поиск</button>
@@ -31,25 +31,35 @@
     </div>
 </div>
 
+<!-- Статистика -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="alert alert-info">
+            <strong>Всего клиентов:</strong> {{ total_count }}
+            {% if search_query %}
+                <span class="text-muted">(отфильтровано по запросу "{{ search_query }}")</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
 <!-- Список клиентов -->
-<div class="card shadow">
-    <div class="card-header py-3">
-        <h6 class="m-0 font-weight-bold text-primary">
-            Клиенты ({{ page_obj.paginator.count }})
-        </h6>
+<div class="card">
+    <div class="card-header">
+        <h6 class="m-0 font-weight-bold text-primary">Список клиентов</h6>
     </div>
     <div class="card-body">
         {% if page_obj %}
             <div class="table-responsive">
-                <table class="table table-bordered" width="100%" cellspacing="0">
+                <table class="table table-hover">
                     <thead>
                         <tr>
-                            <th>Название</th>
-                            <th>Организация</th>
-                            <th>Телефон</th>
-                            <th>Email</th>
+                            <th>Имя в мессенджере</th>
+                            <th>Контактное лицо</th>
+                            <th>Комментарий</th>
                             <th>Обращений</th>
                             <th>Статус</th>
+                            <th>Создано</th>
                             <th>Действия</th>
                         </tr>
                     </thead>
@@ -57,13 +67,27 @@
                         {% for client in page_obj %}
                         <tr>
                             <td>
-                                <a href="{% url 'tickets:client_detail' client.id %}">
+                                <a href="{% url 'tickets:client_detail' client.id %}" 
+                                   class="text-decoration-none">
                                     {{ client.name }}
                                 </a>
                             </td>
-                            <td>{{ client.organization.name|default:"—" }}</td>
-                            <td>{{ client.phone|default:"—" }}</td>
-                            <td>{{ client.email|default:"—" }}</td>
+                            <td>
+                                {% if client.contact_person %}
+                                    <span class="text-muted">{{ client.contact_person }}</span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if client.notes %}
+                                    <span class="text-muted" title="{{ client.notes }}">
+                                        {{ client.notes|truncatechars:50 }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
                             <td>
                                 <span class="badge bg-primary">{{ client.ticket_count }}</span>
                             </td>
@@ -75,9 +99,21 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <a href="{% url 'tickets:client_detail' client.id %}" class="btn btn-sm btn-outline-primary">
-                                    <i class="bi bi-eye"></i> Просмотр
-                                </a>
+                                <small class="text-muted">
+                                    {{ client.created_at|date:"d.m.Y" }}
+                                </small>
+                            </td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    <a href="{% url 'tickets:client_detail' client.id %}" 
+                                       class="btn btn-sm btn-outline-primary" title="Просмотр">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    <a href="{% url 'tickets:client_edit' client.id %}" 
+                                       class="btn btn-sm btn-outline-secondary" title="Редактировать">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}

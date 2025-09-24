@@ -1,0 +1,192 @@
+{% extends 'tickets/base.html' %}
+{% load widget_tweaks %}
+
+{% block title %}
+    {% if is_edit %}
+        Редактирование организации {{ organization.name }} - Система поддержки ВкусВилл
+    {% else %}
+        Новая организация - Система поддержки ВкусВилл
+    {% endif %}
+{% endblock %}
+
+{% block page_title %}
+    {% if is_edit %}
+        Редактирование организации
+    {% else %}
+        Новая организация
+    {% endif %}
+{% endblock %}
+
+{% block page_actions %}
+    {% if is_edit %}
+        <a href="{% url 'tickets:organization_detail' organization.id %}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> К организации
+        </a>
+    {% else %}
+        <a href="{% url 'tickets:organization_list' %}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Все организации
+        </a>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">
+                    {% if is_edit %}
+                        Редактирование организации "{{ organization.name }}"
+                    {% else %}
+                        Создание новой организации
+                    {% endif %}
+                </h6>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="mb-3">
+                                <label for="{{ form.name.id_for_label }}" class="form-label">
+                                    Название организации *
+                                </label>
+                                {{ form.name|add_class:"form-control" }}
+                                {% if form.name.errors %}
+                                    <div class="text-danger">{{ form.name.errors }}</div>
+                                {% endif %}
+                                <small class="form-text text-muted">
+                                    Полное название юридического лица
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="mb-3">
+                                <label for="{{ form.comment.id_for_label }}" class="form-label">
+                                    Комментарий
+                                </label>
+                                {{ form.comment|add_class:"form-control" }}
+                                {% if form.comment.errors %}
+                                    <div class="text-danger">{{ form.comment.errors }}</div>
+                                {% endif %}
+                                <small class="form-text text-muted">
+                                    Дополнительная информация об организации
+                                </small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <div class="form-check mt-4">
+                                    {{ form.is_active|add_class:"form-check-input" }}
+                                    <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                        Активна
+                                    </label>
+                                </div>
+                                {% if form.is_active.errors %}
+                                    <div class="text-danger">{{ form.is_active.errors }}</div>
+                                {% endif %}
+                                <small class="form-text text-muted">
+                                    Активные организации отображаются в списках
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if form.non_field_errors %}
+                        <div class="alert alert-danger">
+                            {{ form.non_field_errors }}
+                        </div>
+                    {% endif %}
+
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            {% if is_edit %}
+                                <a href="{% url 'tickets:organization_detail' organization.id %}" 
+                                   class="btn btn-secondary">
+                                    <i class="bi bi-arrow-left"></i> Отмена
+                                </a>
+                            {% else %}
+                                <a href="{% url 'tickets:organization_list' %}" 
+                                   class="btn btn-secondary">
+                                    <i class="bi bi-arrow-left"></i> Отмена
+                                </a>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i>
+                                {% if is_edit %}
+                                    Сохранить изменения
+                                {% else %}
+                                    Создать организацию
+                                {% endif %}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        {% if is_edit %}
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Информация</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <strong>Создано:</strong><br>
+                    <small class="text-muted">{{ organization.created_at|date:"d.m.Y в H:i" }}</small>
+                </div>
+
+                <div class="mb-3">
+                    <strong>Обновлено:</strong><br>
+                    <small class="text-muted">{{ organization.updated_at|date:"d.m.Y в H:i" }}</small>
+                </div>
+
+                <div class="mb-3">
+                    <strong>Обращений:</strong><br>
+                    <span class="badge bg-primary">{{ organization.ticket_set.count }}</span>
+                </div>
+
+                <hr>
+
+                <div class="d-grid gap-2">
+                    <a href="{% url 'tickets:organization_detail' organization.id %}" 
+                       class="btn btn-outline-primary">
+                        <i class="bi bi-eye"></i> Просмотр
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Помощь</h6>
+            </div>
+            <div class="card-body">
+                <h6>Поля формы:</h6>
+                <ul class="list-unstyled">
+                    <li><strong>Название организации:</strong> Полное юридическое название</li>
+                    <li><strong>Комментарий:</strong> Дополнительная информация для внутреннего использования</li>
+                </ul>
+
+                <hr>
+
+                <h6>Рекомендации:</h6>
+                <ul class="list-unstyled">
+                    <li>• Используйте полные названия организаций</li>
+                    <li>• В комментарии можно указать контактную информацию</li>
+                    <li>• Название должно быть уникальным</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

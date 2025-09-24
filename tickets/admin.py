@@ -37,8 +37,8 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
-    list_display = ['name', 'organization', 'contact_person', 'phone', 'email', 'ticket_count', 'is_active']
-    list_filter = ['is_active', 'organization']
+    list_display = ['name', 'organization', 'contact_person', 'phone', 'email', 'ticket_count', 'is_active', 'created_at']
+    list_filter = ['is_active', 'organization', 'created_at']
     search_fields = ['name', 'organization__name', 'contact_person', 'phone', 'email', 'external_id']
     list_editable = ['is_active']
     autocomplete_fields = ['organization']
@@ -59,8 +59,18 @@ class ClientAdmin(admin.ModelAdmin):
 
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
-    list_display = ['name']
-    search_fields = ['name']
+    list_display = ['name', 'is_active', 'ticket_count', 'created_at']
+    search_fields = ['name', 'comment']
+    list_filter = ['is_active', 'created_at']
+    fieldsets = (
+        ('Основная информация', {
+            'fields': ('name', 'comment', 'is_active')
+        }),
+    )
+    
+    def ticket_count(self, obj):
+        return obj.ticket_set.count()
+    ticket_count.short_description = 'Количество обращений'
 
 
 @admin.register(TicketStatus)

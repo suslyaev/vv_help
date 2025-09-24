@@ -117,16 +117,6 @@ class TicketCommentForm(forms.ModelForm):
 
 
 class ClientForm(forms.ModelForm):
-    # Отдельное текстовое поле для автокомплита организации
-    organization = forms.CharField(
-        required=False,
-        widget=forms.TextInput(attrs={
-            'class': 'form-control autocomplete-field',
-            'placeholder': 'Начните вводить...',
-            'data-autocomplete-url': '/tickets/api/organizations/',
-            'data-autocomplete-min-length': '0',
-        })
-    )
     class Meta:
         model = Client
         fields = [
@@ -140,6 +130,17 @@ class ClientForm(forms.ModelForm):
             'email': forms.EmailInput(attrs={'class': 'form-control'}),
             'external_id': forms.TextInput(attrs={'class': 'form-control'}),
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
+
+
+class OrganizationForm(forms.ModelForm):
+    class Meta:
+        model = Organization
+        fields = ['name', 'comment', 'is_active']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control'}),
+            'comment': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
 

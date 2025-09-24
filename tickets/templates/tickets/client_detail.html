@@ -4,12 +4,14 @@
 {% block page_title %}{{ client.name }}{% endblock %}
 
 {% block page_actions %}
-    <a href="{% url 'tickets:client_list' %}" class="btn btn-secondary">
-        <i class="bi bi-arrow-left"></i> Все клиенты
-    </a>
-    <a href="{% url 'tickets:client_edit' client.id %}" class="btn btn-warning">
-        <i class="bi bi-pencil"></i> Редактировать
-    </a>
+    <div class="btn-group" role="group">
+        <a href="{% url 'tickets:client_edit' client.id %}" class="btn btn-warning rounded-start">
+            <i class="bi bi-pencil"></i> Редактировать
+        </a>
+        <a href="{% url 'tickets:client_list' %}" class="btn btn-secondary rounded-end">
+            <i class="bi bi-arrow-left"></i> Все клиенты
+        </a>
+    </div>
 {% endblock %}
 
 {% block content %}
@@ -95,10 +97,6 @@
             </div>
             <div class="card-body">
                 <div class="mb-3">
-                    <strong>Организация:</strong><br>
-                    <span class="text-muted">{{ client.organization.name|default:"—" }}</span>
-                </div>
-                <div class="mb-3">
                     <strong>Имя клиента:</strong><br>
                     <span class="text-muted">{{ client.name }}</span>
                 </div>
@@ -140,22 +138,22 @@
                     {% endif %}
                 </div>
                 
+                <div class="mb-3">
+                    <strong>Создано:</strong><br>
+                    <small class="text-muted">{{ client.created_at|date:"d.m.Y в H:i" }}</small>
+                </div>
+
+                <div class="mb-3">
+                    <strong>Обновлено:</strong><br>
+                    <small class="text-muted">{{ client.updated_at|date:"d.m.Y в H:i" }}</small>
+                </div>
+                
                 {% if client.notes %}
                 <div class="mb-3">
                     <strong>Заметки:</strong><br>
                     <span class="text-muted">{{ client.notes|linebreaks }}</span>
                 </div>
                 {% endif %}
-                
-                <div class="mb-3">
-                    <strong>Создано:</strong><br>
-                    <span class="text-muted">{{ client.created_at|date:"d.m.Y H:i" }}</span>
-                </div>
-                
-                <div class="mb-3">
-                    <strong>Обновлено:</strong><br>
-                    <span class="text-muted">{{ client.updated_at|date:"d.m.Y H:i" }}</span>
-                </div>
             </div>
         </div>
 

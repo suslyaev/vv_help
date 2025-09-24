@@ -11,7 +11,7 @@ from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 from .models import Ticket, Category, Client, Organization, TicketStatus, TicketComment, TicketTemplate, TicketAudit, TicketAttachment, TelegramMessage
-from .forms import TicketForm, TicketCommentForm, ClientForm, TicketAttachmentForm
+from .forms import TicketForm, TicketCommentForm, ClientForm, TicketAttachmentForm, OrganizationForm
 
 
 @login_required
@@ -620,20 +620,18 @@ def return_to_work(request, ticket_id):
 @login_required
 def client_list(request):
     """Список клиентов"""
+    search_query = request.GET.get('search', '')
     clients = Client.objects.filter(is_active=True).annotate(
         ticket_count=Count('ticket')
     ).order_by('name')
     
-    search_query = request.GET.get('search')
     if search_query:
         clients = clients.filter(
-            Q(name__icontains=search_query) |
-            Q(contact_person__icontains=search_query) |
-            Q(phone__icontains=search_query) |
-            Q(email__icontains=search_query) |
-            Q(organization__name__icontains=search_query)
+            Q(name__iregex=search_query) |
+            Q(contact_person__iregex=search_query)
         )
     
+    # Пагинация
     paginator = Paginator(clients, 25)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
@@ -641,6 +639,7 @@ def client_list(request):
     context = {
         'page_obj': page_obj,
         'search_query': search_query,
+        'total_count': clients.count(),
     }
     
     return render(request, 'tickets/client_list.html', context)
@@ -673,16 +672,7 @@ def client_create(request):
     if request.method == 'POST':
         form = ClientForm(request.POST)
         if form.is_valid():
-            client = form.save(commit=False)
-            # Обработка autocomplete Organization
-            org_id = (request.POST.get('organization_id') or '').strip()
-            org_name_text = (request.POST.get('organization') or '').strip()
-            if org_id.isdigit():
-                client.organization = Organization.objects.filter(id=int(org_id)).first()
-            elif org_name_text:
-                # Если ввели текст без выбора — создадим/привяжем организацию по имени
-                client.organization, _ = Organization.objects.get_or_create(name=org_name_text)
-            client.save()
+            client = form.save()
             messages.success(request, f'Клиент "{client.name}" создан')
             return redirect('tickets:client_detail', client_id=client.id)
     else:
@@ -701,22 +691,11 @@ def client_edit(request, client_id):
     if request.method == 'POST':
         form = ClientForm(request.POST, instance=client)
         if form.is_valid():
-            client = form.save(commit=False)
-            org_id = (request.POST.get('organization_id') or '').strip()
-            org_name_text = (request.POST.get('organization') or '').strip()
-            if org_id.isdigit():
-                client.organization = Organization.objects.filter(id=int(org_id)).first()
-            elif org_name_text:
-                client.organization, _ = Organization.objects.get_or_create(name=org_name_text)
-            else:
-                client.organization = None
-            client.save()
+            client = form.save()
             messages.success(request, f'Клиент "{client.name}" обновлён')
             return redirect('tickets:client_detail', client_id=client.id)
     else:
         form = ClientForm(instance=client)
-        if client.organization:
-            form.fields['organization'].initial = client.organization.name
     return render(request, 'tickets/client_form.html', {'form': form, 'client': client})
 
 
@@ -1444,3 +1423,105 @@ def get_unresolved_tickets(request):
         })
     
     return JsonResponse({'results': results})
+
+
+# ===== ORGANIZATION VIEWS =====
+
+@login_required
+def organization_list(request):
+    """Список организаций"""
+    search_query = request.GET.get("search", "")
+    organizations = Organization.objects.filter(is_active=True)
+    
+    if search_query:
+        organizations = organizations.filter(
+            Q(name__iregex=search_query) |
+            Q(comment__iregex=search_query)
+        )
+    
+    # Добавляем количество обращений для каждой организации
+    organizations = organizations.annotate(
+        ticket_count=Count("ticket")
+    ).order_by("name")
+    
+    # Пагинация
+    paginator = Paginator(organizations, 25)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        "page_obj": page_obj,
+        "search_query": search_query,
+        "total_count": organizations.count(),
+    }
+    return render(request, "tickets/organization_list.html", context)
+
+
+@login_required
+def organization_detail(request, organization_id):
+    """Детальная страница организации"""
+    organization = get_object_or_404(Organization, id=organization_id)
+    
+    # Получаем обращения организации
+    tickets = Ticket.objects.filter(organization=organization).select_related(
+        "client", "status", "category", "assigned_to"
+    ).order_by("-created_at")
+    
+    # Статистика
+    total_tickets = tickets.count()
+    open_tickets = tickets.filter(status__is_final=False).count()
+    
+    # Пагинация обращений
+    paginator = Paginator(tickets, 20)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        "organization": organization,
+        "page_obj": page_obj,
+        "ticket_count": total_tickets,
+        "total_tickets": total_tickets,
+        "open_tickets": open_tickets,
+    }
+    return render(request, "tickets/organization_detail.html", context)
+
+
+@login_required
+def organization_edit(request, organization_id):
+    """Редактирование организации"""
+    organization = get_object_or_404(Organization, id=organization_id)
+    
+    if request.method == "POST":
+        form = OrganizationForm(request.POST, instance=organization)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Организация \"{organization.name}\" успешно обновлена!")
+            return redirect("tickets:organization_detail", organization_id=organization.id)
+    else:
+        form = OrganizationForm(instance=organization)
+    
+    context = {
+        "form": form,
+        "organization": organization,
+        "is_edit": True,
+    }
+    return render(request, "tickets/organization_form.html", context)
+
+
+@login_required
+def organization_create(request):
+    """Создание новой организации"""
+    if request.method == 'POST':
+        form = OrganizationForm(request.POST)
+        if form.is_valid():
+            organization = form.save()
+            messages.success(request, f'Организация "{organization.name}" успешно создана!')
+            return redirect('tickets:organization_detail', organization_id=organization.id)
+    else:
+        form = OrganizationForm()
+    
+    context = {
+        'form': form,
+        'is_edit': False,
+    }
+    return render(request, 'tickets/organization_form.html', context)

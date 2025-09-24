@@ -59,6 +59,8 @@ class Client(models.Model):
 class Organization(models.Model):
     """Организация (юр.лицо)"""
     name = models.CharField('Организация', max_length=255, unique=True)
+    comment = models.TextField('Комментарий', blank=True, help_text='Дополнительная информация об организации')
+    is_active = models.BooleanField('Активна', default=True, help_text='Активные организации отображаются в списках')
     created_at = models.DateTimeField('Создано', auto_now_add=True)
     updated_at = models.DateTimeField('Обновлено', auto_now=True)
 

@@ -1,0 +1,210 @@
+{% extends 'tickets/base.html' %}
+
+{% block title %}{{ organization.name }} - Система поддержки ВкусВилл{% endblock %}
+{% block page_title %}{{ organization.name }}{% endblock %}
+
+{% block page_actions %}
+    <div class="btn-group" role="group">
+        <a href="{% url 'tickets:organization_edit' organization.id %}" class="btn btn-warning rounded-start">
+            <i class="bi bi-pencil"></i> Редактировать
+        </a>
+        <a href="{% url 'tickets:organization_list' %}" class="btn btn-secondary rounded-end">
+            <i class="bi bi-arrow-left"></i> Все организации
+        </a>
+    </div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <!-- Обращения организации -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-primary">Обращения организации</h6>
+                <a href="{% url 'tickets:ticket_create' %}" class="btn btn-sm btn-primary">
+                    <i class="bi bi-plus-circle"></i> Новое обращение
+                </a>
+            </div>
+            <div class="card-body">
+                {% if page_obj %}
+                    <div class="table-responsive">
+                        <table class="table table-bordered" width="100%" cellspacing="0">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Заголовок</th>
+                                    <th>Клиент</th>
+                                    <th>Категория</th>
+                                    <th>Статус</th>
+                                    <th>Приоритет</th>
+                                    <th>Исполнитель</th>
+                                    <th>Создано</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ticket in page_obj %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'tickets:ticket_detail' ticket.id %}" 
+                                           class="text-decoration-none">
+                                            #{{ ticket.id }}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'tickets:ticket_detail' ticket.id %}" 
+                                           class="text-decoration-none">
+                                            {{ ticket.title|truncatechars:40 }}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'tickets:client_detail' ticket.client.id %}" 
+                                           class="text-decoration-none">
+                                            {{ ticket.client.name }}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">{{ ticket.category.name }}</span>
+                                    </td>
+                                    <td>
+                                        {% if ticket.status.color %}
+                                            <span class="badge" style="background-color: {{ ticket.status.color }};">
+                                                {{ ticket.status.name }}
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">{{ ticket.status.name }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if ticket.priority == 'high' %}
+                                            <span class="badge bg-danger">Высокий</span>
+                                        {% elif ticket.priority == 'normal' %}
+                                            <span class="badge bg-warning">Обычный</span>
+                                        {% elif ticket.priority == 'low' %}
+                                            <span class="badge bg-success">Низкий</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if ticket.assigned_to %}
+                                            {{ ticket.assigned_to.get_full_name|default:ticket.assigned_to.username }}
+                                        {% else %}
+                                            <span class="text-muted">Не назначен</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {{ ticket.created_at|date:"d.m.Y H:i" }}
+                                        </small>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Пагинация -->
+                    {% if page_obj.has_other_pages %}
+                    <nav aria-label="Страницы обращений">
+                        <ul class="pagination justify-content-center">
+                            {% if page_obj.has_previous %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page=1">Первая</a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Предыдущая</a>
+                                </li>
+                            {% endif %}
+
+                            <li class="page-item active">
+                                <span class="page-link">
+                                    Страница {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}
+                                </span>
+                            </li>
+
+                            {% if page_obj.has_next %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Следующая</a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Последняя</a>
+                                </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                        <h5 class="text-muted mt-3">Обращений не найдено</h5>
+                        <p class="text-muted">У этой организации пока нет обращений</p>
+                        <a href="{% url 'tickets:ticket_create' %}" class="btn btn-primary">
+                            <i class="bi bi-plus-circle"></i> Создать первое обращение
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Информация об организации -->
+    <div class="col-lg-4">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Информация об организации</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <strong>Название:</strong><br>
+                    <span class="text-dark">{{ organization.name }}</span>
+                </div>
+
+                {% if organization.comment %}
+                <div class="mb-3">
+                    <strong>Комментарий:</strong><br>
+                    <span class="text-muted">{{ organization.comment|linebreaks }}</span>
+                </div>
+                {% endif %}
+
+                <div class="mb-3">
+                    <strong>Статус:</strong><br>
+                    {% if organization.is_active %}
+                        <span class="badge bg-success fs-6">Активна</span>
+                    {% else %}
+                        <span class="badge bg-secondary fs-6">Неактивна</span>
+                    {% endif %}
+                </div>
+
+                <div class="mb-3">
+                    <strong>Создано:</strong><br>
+                    <small class="text-muted">{{ organization.created_at|date:"d.m.Y в H:i" }}</small>
+                </div>
+
+                <div class="mb-3">
+                    <strong>Обновлено:</strong><br>
+                    <small class="text-muted">{{ organization.updated_at|date:"d.m.Y в H:i" }}</small>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Статистика -->
+        <div class="card shadow">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Статистика</h6>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h4 class="text-primary">{{ ticket_count }}</h4>
+                        <p class="text-muted mb-0">Всего обращений</p>
+                    </div>
+                    <div class="col-6">
+                        <h4 class="text-success">{{ open_tickets }}</h4>
+                        <p class="text-muted mb-0">Открытых</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
