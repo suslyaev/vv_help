@@ -29,11 +29,11 @@
                 <input type="hidden" name="client_id" value="{{ filters.client_id }}">
             </div>
             <div class="col-md-2">
-                <label class="form-label">Исполнитель</label>
-                <input type="text" class="form-control form-control-sm autocomplete-field" name="assigned_to"
-                       data-autocomplete-url="/tickets/api/users/" data-autocomplete-min-length="0"
-                       placeholder="Начните вводить исполнителя..." value="{{ filters.assigned_to_name }}">
-                <input type="hidden" name="assigned_to_id" value="{{ filters.assigned_to_id }}">
+                <label class="form-label">Организация</label>
+                <input type="text" class="form-control form-control-sm autocomplete-field" name="organization"
+                       data-autocomplete-url="/tickets/api/organizations/" data-autocomplete-min-length="0"
+                       placeholder="Начните вводить организацию..." value="{{ filters.organization_name }}">
+                <input type="hidden" name="organization_id" value="{{ filters.organization_id }}">
             </div>
             <div class="col-md-2">
                 <label class="form-label">Дата с</label>
@@ -47,7 +47,7 @@
                 <div class="btn-group" role="group">
                     <button type="submit" class="btn btn-primary btn-sm" title="Показать"><i class="bi bi-check2"></i></button>
                     <a href="{% url 'tickets:analytics' %}" class="btn btn-secondary btn-sm" title="Сброс"><i class="bi bi-arrow-counterclockwise"></i></a>
-                    <a href="{% url 'tickets:analytics_export_xlsx' %}?category_id={{ filters.category_id }}&client_id={{ filters.client_id }}&assigned_to_id={{ filters.assigned_to_id }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}" class="btn btn-success btn-sm" title="Выгрузить XLSX"><i class="bi bi-file-earmark-spreadsheet"></i></a>
+                    <a href="{% url 'tickets:analytics_export_xlsx' %}?category_id={{ filters.category_id }}&client_id={{ filters.client_id }}&organization_id={{ filters.organization_id }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}" class="btn btn-success btn-sm" title="Выгрузить XLSX"><i class="bi bi-file-earmark-spreadsheet"></i></a>
                 </div>
             </div>
         </form>
@@ -110,7 +110,7 @@
                         <td><a href="{% url 'tickets:ticket_detail' ticket.id %}">#{{ ticket.id }}</a></td>
                         <td>{{ ticket.title|truncatechars:60 }}</td>
                         <td>{{ ticket.client.name }}</td>
-                        <td>{{ ticket.client.organization.name|default:"—" }}</td>
+                        <td>{{ ticket.organization.name|default:"—" }}</td>
                         <td>{{ ticket.category.name }}</td>
                         <td>{{ ticket.status.name }}</td>
                         <td>{% if ticket.assigned_to %}{{ ticket.assigned_to.get_full_name|default:ticket.assigned_to.username }}{% else %}—{% endif %}</td>

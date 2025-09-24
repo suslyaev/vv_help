@@ -119,7 +119,7 @@
                                         </a>
                                     </td>
                                     <td>{{ ticket.client.name }}</td>
-                                    <td>{{ ticket.client.organization.name|default:"—" }}</td>
+                                    <td>{{ ticket.organization.name|default:"—" }}</td>
                                     <td>
                                         <span class="status-badge" style="background-color: {{ ticket.status.color }};">
                                             {{ ticket.status.name }}

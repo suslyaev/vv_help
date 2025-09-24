@@ -58,7 +58,7 @@ def dashboard(request):
 def ticket_list(request):
     """Список обращений с фильтрацией"""
     tickets = Ticket.objects.select_related(
-        'client', 'category', 'status', 'assigned_to'
+        'client', 'organization', 'category', 'status', 'assigned_to'
     ).order_by('-created_at')
     
     # Фильтры
@@ -68,7 +68,9 @@ def ticket_list(request):
     if category_filter in (None, '', 'None', 'null', 'NULL'):
         category_filter = None
     assigned_filter = request.GET.get('assigned')
-    priority_filter = request.GET.get('priority')
+    organization_filter = request.GET.get('organization_id') or request.GET.get('organization')
+    if organization_filter in (None, '', 'None', 'null', 'NULL'):
+        organization_filter = None
     search_query = request.GET.get('search')
     
     if status_filter:
@@ -85,8 +87,11 @@ def ticket_list(request):
     elif assigned_filter == 'unassigned':
         tickets = tickets.filter(assigned_to__isnull=True)
     
-    if priority_filter:
-        tickets = tickets.filter(priority=priority_filter)
+    if organization_filter:
+        try:
+            tickets = tickets.filter(organization_id=int(organization_filter))
+        except (TypeError, ValueError):
+            pass
     
     if search_query:
         tickets = tickets.filter(
@@ -112,7 +117,7 @@ def ticket_list(request):
             'status': status_filter,
             'category': category_filter,
             'assigned': assigned_filter,
-            'priority': priority_filter,
+            'organization': organization_filter,
             'search': search_query,
         }
     }
@@ -884,10 +889,10 @@ def analytics(request):
     category_id = first_non_empty('category_id')
     category_text = first_non_empty('category')
     client_id = first_non_empty('client_id') or first_non_empty('client')
-    assigned_to_id = first_non_empty('assigned_to_id') or first_non_empty('assigned_to')
+    organization_id = first_non_empty('organization_id') or first_non_empty('organization')
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
-    chart_type = request.GET.get('chart_type', 'tags')  # tags или organizations
+    chart_type = request.GET.get('chart_type', 'organizations')  # tags или organizations
 
     # Даты по умолчанию: текущий месяц
     from django.utils import timezone as dj_tz
@@ -898,7 +903,7 @@ def analytics(request):
     if not date_to:
         date_to = today.isoformat()
 
-    tickets_qs = Ticket.objects.select_related('category', 'client', 'client__organization', 'status', 'assigned_to').all()
+    tickets_qs = Ticket.objects.select_related('category', 'client', 'organization', 'status', 'assigned_to').all()
 
     if category_id and str(category_id).isdigit():
         cid = int(category_id)
@@ -910,8 +915,8 @@ def analytics(request):
         )
     if client_id and str(client_id).isdigit():
         tickets_qs = tickets_qs.filter(client_id=int(client_id))
-    if assigned_to_id and str(assigned_to_id).isdigit():
-        tickets_qs = tickets_qs.filter(assigned_to_id=int(assigned_to_id))
+    if organization_id and str(organization_id).isdigit():
+        tickets_qs = tickets_qs.filter(organization_id=int(organization_id))
     if date_from:
         tickets_qs = tickets_qs.filter(created_at__date__gte=date_from)
     if date_to:
@@ -929,9 +934,9 @@ def analytics(request):
     if chart_type == 'organizations':
         from collections import Counter
         org_counter = Counter()
-        for ticket in tickets_qs.select_related('client__organization'):
-            if ticket.client and ticket.client.organization:
-                org_counter[ticket.client.organization.name] += 1
+        for ticket in tickets_qs.select_related('organization'):
+            if ticket.organization:
+                org_counter[ticket.organization.name] += 1
         top_orgs = sorted(org_counter.items(), key=lambda x: x[1], reverse=True)[:20]
         chart_data = [{'name': k, 'count': v} for k, v in top_orgs]
     else:  # tags
@@ -968,7 +973,7 @@ def analytics(request):
     # Тексты выбранных значений для автозаполнения
     category_name = None
     client_name = None
-    assigned_to_name = None
+    organization_name = None
     if category_id and str(category_id).isdigit():
         c = Category.objects.filter(id=int(category_id)).first()
         if c:
@@ -977,10 +982,10 @@ def analytics(request):
         cl = Client.objects.filter(id=int(client_id)).first()
         if cl:
             client_name = cl.name
-    if assigned_to_id and str(assigned_to_id).isdigit():
-        u = User.objects.filter(id=int(assigned_to_id)).first()
-        if u:
-            assigned_to_name = u.get_full_name() or u.username
+    if organization_id and str(organization_id).isdigit():
+        org = Organization.objects.filter(id=int(organization_id)).first()
+        if org:
+            organization_name = org.name
 
     context = {
         'page_obj': page_obj,
@@ -989,8 +994,8 @@ def analytics(request):
             'category_name': category_name or category_text or '',
             'client_id': client_id or '',
             'client_name': client_name or '',
-            'assigned_to_id': assigned_to_id or '',
-            'assigned_to_name': assigned_to_name or '',
+            'organization_id': organization_id or '',
+            'organization_name': organization_name or '',
             'date_from': date_from or '',
             'date_to': date_to or '',
         },
@@ -1021,11 +1026,11 @@ def analytics_export_xlsx(request):
     category_id = first_non_empty('category_id')
     category_text = first_non_empty('category')
     client_id = first_non_empty('client_id') or first_non_empty('client')
-    assigned_to_id = first_non_empty('assigned_to_id') or first_non_empty('assigned_to')
+    organization_id = first_non_empty('organization_id') or first_non_empty('organization')
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
 
-    qs = Ticket.objects.select_related('category', 'client', 'client__organization', 'status', 'assigned_to')
+    qs = Ticket.objects.select_related('category', 'client', 'organization', 'status', 'assigned_to')
     if category_id and str(category_id).isdigit():
         cid = int(category_id)
         qs = qs.filter(Q(category_id=cid) | Q(category__parent_id=cid))
@@ -1033,8 +1038,8 @@ def analytics_export_xlsx(request):
         qs = qs.filter(Q(category__name__icontains=category_text) | Q(category__parent__name__icontains=category_text))
     if client_id and str(client_id).isdigit():
         qs = qs.filter(client_id=int(client_id))
-    if assigned_to_id and str(assigned_to_id).isdigit():
-        qs = qs.filter(assigned_to_id=int(assigned_to_id))
+    if organization_id and str(organization_id).isdigit():
+        qs = qs.filter(organization_id=int(organization_id))
     if date_from:
         qs = qs.filter(created_at__date__gte=date_from)
     if date_to:
@@ -1047,18 +1052,20 @@ def analytics_export_xlsx(request):
     wb = Workbook()
     ws = wb.active
     ws.title = 'Обращения'
-    headers = ['ID', 'Заголовок', 'Клиент', 'Организация', 'Категория', 'Статус', 'Исполнитель', 'Создано']
+    headers = ['ID', 'Заголовок', 'Клиент', 'Контактное лицо', 'Организация', 'Категория', 'Статус', 'Исполнитель', 'Создано', 'Дата выполнения']
     ws.append(headers)
     for t in qs.order_by('-created_at'):
         ws.append([
             t.id,
             t.title,
             t.client.name if t.client else '',
-            t.client.organization.name if t.client and t.client.organization else '',
+            t.client.contact_person if t.client else '',
+            t.organization.name if t.organization else '',
             t.category.name if t.category else '',
             t.status.name if t.status else '',
             (t.assigned_to.get_full_name() or t.assigned_to.username) if t.assigned_to else '',
             t.created_at.strftime('%d.%m.%Y %H:%M'),
+            t.resolved_at.strftime('%d.%m.%Y %H:%M') if t.resolved_at else '',
         ])
 
     # Автоширина
@@ -1069,8 +1076,11 @@ def analytics_export_xlsx(request):
             max_len = max(max_len, len(str(cell.value)) if cell.value else 0)
         ws.column_dimensions[col_letter].width = min(max(10, max_len + 2), 60)
 
+    from datetime import datetime
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    
     resp = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    resp['Content-Disposition'] = 'attachment; filename="analytics_export.xlsx"'
+    resp['Content-Disposition'] = f'attachment; filename="analytics_export_{timestamp}.xlsx"'
     wb.save(resp)
     return resp
 

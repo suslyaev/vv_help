@@ -43,14 +43,11 @@
                 <input type="hidden" name="category_id" id="category_id" value="{{ current_filters.category }}">
             </div>
             <div class="col-md-2">
-                <label for="priority" class="form-label">Приоритет</label>
-                <select class="form-control" id="priority" name="priority">
-                    <option value="">Все приоритеты</option>
-                    <option value="low" {% if current_filters.priority == 'low' %}selected{% endif %}>Низкий</option>
-                    <option value="normal" {% if current_filters.priority == 'normal' %}selected{% endif %}>Обычный</option>
-                    <option value="high" {% if current_filters.priority == 'high' %}selected{% endif %}>Высокий</option>
-                    <option value="urgent" {% if current_filters.priority == 'urgent' %}selected{% endif %}>Срочный</option>
-                </select>
+                <label for="organization" class="form-label">Организация</label>
+                <input type="text" class="form-control autocomplete-field" id="organization" name="organization"
+                       data-autocomplete-url="/tickets/api/organizations/" data-autocomplete-min-length="0"
+                       placeholder="Начните вводить организацию...">
+                <input type="hidden" name="organization_id" id="organization_id" value="{{ current_filters.organization }}">
             </div>
             <div class="col-md-2">
                 <label for="assigned" class="form-label">Исполнитель</label>
@@ -62,8 +59,9 @@
             </div>
             <div class="col-md-1">
                 <label class="form-label">&nbsp;</label>
-                <div>
-                    <button type="submit" class="btn btn-primary">Фильтр</button>
+                <div class="btn-group" role="group">
+                    <button type="submit" class="btn btn-primary btn-sm" title="Показать"><i class="bi bi-check2"></i></button>
+                    <a href="{% url 'tickets:ticket_list' %}" class="btn btn-secondary btn-sm" title="Сброс"><i class="bi bi-arrow-counterclockwise"></i></a>
                 </div>
             </div>
         </form>
@@ -107,7 +105,7 @@
                                 </a>
                             </td>
                             <td>{{ ticket.client.name }}</td>
-                            <td>{{ ticket.client.organization.name|default:"—" }}</td>
+                            <td>{{ ticket.organization.name|default:"—" }}</td>
                             <td>{{ ticket.category.name|truncatechars:20 }}</td>
                             <td>
                                 <span class="status-badge" style="background-color: {{ ticket.status.color }};">
