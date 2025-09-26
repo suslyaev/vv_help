@@ -10,8 +10,209 @@ from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.safestring import mark_safe
+from django.utils.http import urlencode
 from .models import Ticket, Category, Client, Organization, TicketStatus, TicketComment, TicketTemplate, TicketAudit, TicketAttachment, TelegramMessage, TelegramRoute, TelegramGroup
 from .forms import TicketForm, TicketCommentForm, ClientForm, TicketAttachmentForm, OrganizationForm
+
+
+def build_stream_url_with_params(request, message_id=None, **extra_params):
+    """Строит URL для stream с сохранением текущих параметров фильтрации и пагинации"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Добавляем print для отладки
+    print(f"=== build_stream_url_with_params called ===")
+    print(f"message_id: {message_id} (type: {type(message_id)})")
+    print(f"extra_params: {extra_params}")
+    print(f"request.GET: {dict(request.GET)}")
+    print(f"request.POST: {dict(request.POST)}")
+    
+    # Также записываем в файл
+    with open('/tmp/stream_debug.log', 'a') as f:
+        f.write(f"=== build_stream_url_with_params called ===\n")
+        f.write(f"message_id: {message_id} (type: {type(message_id)})\n")
+        f.write(f"extra_params: {extra_params}\n")
+        f.write(f"request.GET: {dict(request.GET)}\n")
+        f.write(f"request.POST: {dict(request.POST)}\n")
+        f.write(f"---\n")
+    
+    params = {}
+    
+    # Логируем входящие параметры
+    logger.info(f"build_stream_url_with_params called with message_id={message_id}, extra_params={extra_params}")
+    logger.info(f"Current request.GET: {dict(request.GET)}")
+    
+    # Сохраняем текущие параметры фильтрации
+    filter_params = ['group_id', 'group', 'q', 'date_from', 'date_to', 'per_page']
+    for param in filter_params:
+        value = request.GET.get(param)
+        if value:
+            params[param] = value
+    
+    # Если GET параметры пустые, пытаемся получить их из POST (для сохранения фильтров)
+    if not params and request.method == 'POST':
+        preserve_params = {
+            'q': request.POST.get('preserve_q'),
+            'group_id': request.POST.get('preserve_group_id'),
+            'date_from': request.POST.get('preserve_date_from'),
+            'date_to': request.POST.get('preserve_date_to'),
+            'per_page': request.POST.get('preserve_per_page'),
+            'page': request.POST.get('preserve_page'),
+        }
+        
+        # Добавляем только непустые параметры
+        for key, value in preserve_params.items():
+            if value:
+                params[key] = value
+        
+        print(f"Using preserved params from POST: {params}")
+        with open('/tmp/stream_debug.log', 'a') as f:
+            f.write(f"Using preserved params from POST: {params}\n")
+    
+    print(f"Filter params collected: {params}")
+    logger.info(f"Filter params collected: {params}")
+    
+    # Добавляем дополнительные параметры
+    params.update(extra_params)
+    
+    # Если указан message_id, пытаемся найти страницу с этим сообщением
+    if message_id and 'page' not in extra_params:
+        print(f"Looking for page with message_id={message_id}")
+        logger.info(f"Looking for page with message_id={message_id} (type: {type(message_id)})")
+        per_page = int(params.get('per_page', 25))
+        print(f"Per page: {per_page}")
+        logger.info(f"Per page: {per_page}")
+        
+        # Получаем текущий queryset с теми же фильтрами
+        qs = TelegramMessage.objects.select_related('linked_ticket').order_by('-message_date', '-id')
+        
+        # Применяем те же фильтры
+        group_id = request.GET.get('group_id') or request.GET.get('group')
+        q = request.GET.get('q')
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+        
+        print(f"Applying filters: group_id={group_id}, q={q}, date_from={date_from}, date_to={date_to}")
+        logger.info(f"Applying filters: group_id={group_id}, q={q}, date_from={date_from}, date_to={date_to}")
+        
+        if group_id and group_id not in (None, '', 'None', 'null', 'NULL'):
+            qs = qs.filter(chat_id=group_id)
+        if q:
+            qs = qs.filter(Q(text__icontains=q) | Q(from_username__icontains=q) | Q(from_fullname__icontains=q))
+        
+        if date_from:
+            try:
+                from datetime import datetime
+                date_from_dt = datetime.strptime(date_from, '%Y-%m-%d')
+                qs = qs.filter(message_date__date__gte=date_from_dt.date())
+                print(f"Applied date_from filter: {date_from_dt.date()}")
+                logger.info(f"Applied date_from filter: {date_from_dt.date()}")
+            except ValueError as e:
+                print(f"Error parsing date_from {date_from}: {e}")
+                logger.error(f"Error parsing date_from {date_from}: {e}")
+        
+        if date_to:
+            try:
+                from datetime import datetime
+                date_to_dt = datetime.strptime(date_to, '%Y-%m-%d')
+                qs = qs.filter(message_date__date__lte=date_to_dt.date())
+                print(f"Applied date_to filter: {date_to_dt.date()}")
+                logger.info(f"Applied date_to filter: {date_to_dt.date()}")
+            except ValueError as e:
+                print(f"Error parsing date_to {date_to}: {e}")
+                logger.error(f"Error parsing date_to {date_to}: {e}")
+        
+        print(f"Filtered queryset count: {qs.count()}")
+        logger.info(f"Filtered queryset count: {qs.count()}")
+        
+        # Находим страницу с сообщением
+        target_page = find_message_page_in_stream(message_id, qs, per_page)
+        print(f"Target page found: {target_page}")
+        logger.info(f"Target page found: {target_page}")
+        params['page'] = target_page
+    elif 'page' not in extra_params:
+        # Если не указана страница в extra_params, сохраняем текущую
+        current_page = request.GET.get('page')
+        if current_page:
+            params['page'] = current_page
+            print(f"Preserving current page: {current_page}")
+            logger.info(f"Preserving current page: {current_page}")
+    
+    print(f"Final params: {params}")
+    logger.info(f"Final params: {params}")
+    
+    # Строим URL
+    base_url = reverse('tickets:stream')
+    if params:
+        final_url = f"{base_url}?{urlencode(params)}"
+        
+        # Добавляем якорь к сообщению, если указан message_id
+        if message_id:
+            final_url += f"#message-{message_id}"
+        
+        print(f"Final URL: {final_url}")
+        logger.info(f"Final URL: {final_url}")
+        
+        # Записываем финальный URL в файл
+        with open('/tmp/stream_debug.log', 'a') as f:
+            f.write(f"Final URL: {final_url}\n")
+            f.write(f"==================\n")
+        
+        return final_url
+    print(f"Returning base URL: {base_url}")
+    logger.info(f"Returning base URL: {base_url}")
+    
+    # Записываем базовый URL в файл
+    with open('/tmp/stream_debug.log', 'a') as f:
+        f.write(f"Returning base URL: {base_url}\n")
+        f.write(f"==================\n")
+    
+    return base_url
+
+
+def get_stream_page_with_filters(request, qs, per_page=25):
+    """Получает страницу с учетом фильтров и корректной обработкой пагинации"""
+    paginator = Paginator(qs, per_page)
+    page_number = request.GET.get('page')
+    
+    try:
+        page_obj = paginator.get_page(page_number)
+    except Exception:
+        # Если страница не существует, возвращаем первую страницу
+        page_obj = paginator.get_page(1)
+    
+    return page_obj
+
+
+def find_message_page_in_stream(message_id, qs, per_page=25):
+    """Находит страницу, на которой находится сообщение с указанным ID"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        logger.info(f"find_message_page_in_stream called with message_id={message_id} (type: {type(message_id)}), per_page={per_page}")
+        
+        # Получаем позицию сообщения в отсортированном queryset
+        message_ids = list(qs.values_list('id', flat=True))
+        logger.info(f"Total messages in queryset: {len(message_ids)}")
+        logger.info(f"First 10 message IDs: {message_ids[:10]}")
+        
+        # Преобразуем message_id в int для сравнения
+        message_id_int = int(message_id)
+        
+        if message_id_int in message_ids:
+            position = message_ids.index(message_id_int)
+            page_number = (position // per_page) + 1
+            logger.info(f"Message {message_id_int} found at position {position}, page {page_number}")
+            return page_number
+        else:
+            logger.warning(f"Message {message_id_int} not found in queryset")
+            logger.info(f"Available message IDs: {message_ids}")
+    except Exception as e:
+        logger.error(f"Error in find_message_page_in_stream: {e}")
+    
+    logger.info("Returning page 1 as fallback")
+    return 1
 
 
 @login_required
@@ -1912,19 +2113,46 @@ def analytics_export_xlsx(request):
 @login_required
 def stream(request):
     """Поток сообщений Telegram"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"Stream view called with GET params: {dict(request.GET)}")
+    logger.info(f"Stream view called with POST params: {dict(request.POST) if request.method == 'POST' else 'GET request'}")
+    
     qs = TelegramMessage.objects.select_related('linked_ticket').order_by('-message_date', '-id')
 
     # Фильтры
     group_id = request.GET.get('group_id') or request.GET.get('group')
     q = request.GET.get('q')
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    
     if group_id and group_id not in (None, '', 'None', 'null', 'NULL'):
         qs = qs.filter(chat_id=group_id)
     if q:
         qs = qs.filter(Q(text__icontains=q) | Q(from_username__icontains=q) | Q(from_fullname__icontains=q))
+    
+    # Фильтры по дате создания
+    if date_from:
+        try:
+            from datetime import datetime
+            date_from_dt = datetime.strptime(date_from, '%Y-%m-%d')
+            qs = qs.filter(message_date__date__gte=date_from_dt.date())
+        except ValueError:
+            pass
+    
+    if date_to:
+        try:
+            from datetime import datetime
+            date_to_dt = datetime.strptime(date_to, '%Y-%m-%d')
+            qs = qs.filter(message_date__date__lte=date_to_dt.date())
+        except ValueError:
+            pass
 
     # Действие: создать тикет из сообщения
     if request.method == 'POST' and request.POST.get('action') == 'create_ticket':
         msg_id = request.POST.get('message_id')
+        logger.info(f"Creating ticket from message_id: {msg_id}")
         msg = get_object_or_404(TelegramMessage, id=msg_id)
 
         # Получаем данные из формы модального окна
@@ -1970,35 +2198,40 @@ def stream(request):
         category = None
         priority = 'normal'
         
-        if route:
-            # Используем настройки из маршрута
-            category = route.category
-            priority = route.priority
-            
-            # Формируем заголовок по шаблону маршрута
-            client_name = client.name if client else 'Неизвестный клиент'
-            group_name = msg.chat_title or 'Неизвестная группа'
-            
-            if not title:  # Если заголовок не задан вручную
-                title = route.format_title(
-                    group_name=group_name,
-                    client_name=client_name,
-                    message_id=msg.message_id,
-                    message_date=msg.message_date
-                )
-        else:
-            # Используем логику по умолчанию
-            if category_id:
-                try:
-                    category = Category.objects.get(id=category_id)
-                except Category.DoesNotExist:
-                    pass
-            
-            if not category:
+        # Сначала проверяем, выбрал ли пользователь категорию вручную
+        if category_id:
+            try:
+                category = Category.objects.get(id=category_id)
+                print(f"Using user-selected category: {category.name}")
+            except Category.DoesNotExist:
+                pass
+        
+        # Если пользователь не выбрал категорию, используем маршрутизацию
+        if not category:
+            if route:
+                # Используем настройки из маршрута
+                category = route.category
+                priority = route.priority
+                print(f"Using route category: {category.name}")
+                
+                # Формируем заголовок по шаблону маршрута
+                client_name = client.name if client else 'Неизвестный клиент'
+                group_name = msg.chat_title or 'Неизвестная группа'
+                
+                if not title:  # Если заголовок не задан вручную
+                    title = route.format_title(
+                        group_name=group_name,
+                        client_name=client_name,
+                        message_id=msg.message_id,
+                        message_date=msg.message_date
+                    )
+            else:
+                # Используем логику по умолчанию
                 category = Category.objects.filter(name__icontains='Обращения от поставщиков', parent__isnull=True).first() or Category.objects.first()
-            
-            if not title:
-                title = msg.text[:100] if msg.text else 'Сообщение из Telegram'
+                print(f"Using default category: {category.name}")
+                
+                if not title:
+                    title = msg.text[:100] if msg.text else 'Сообщение из Telegram'
 
         # Статус по умолчанию
         status = TicketStatus.objects.filter(is_final=False).order_by('order').first() or TicketStatus.objects.first()
@@ -2027,7 +2260,22 @@ def stream(request):
         # Добавляем информацию о маршруте в сообщение
         route_info = f' (через маршрут "{route.name}")' if route else ''
         messages.success(request, mark_safe(f'Создано обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a>{route_info}'))
-        return redirect('tickets:stream')
+        
+        logger.info(f"Ticket created successfully, redirecting with message_id={msg_id}")
+        print(f"=== CREATING TICKET REDIRECT ===")
+        print(f"msg_id: {msg_id} (type: {type(msg_id)})")
+        print(f"request.GET before redirect: {dict(request.GET)}")
+        print(f"request.POST before redirect: {dict(request.POST)}")
+        
+        # Записываем в файл
+        with open('/tmp/stream_debug.log', 'a') as f:
+            f.write(f"=== CREATING TICKET REDIRECT ===\n")
+            f.write(f"msg_id: {msg_id} (type: {type(msg_id)})\n")
+            f.write(f"request.GET before redirect: {dict(request.GET)}\n")
+            f.write(f"request.POST before redirect: {dict(request.POST)}\n")
+            f.write(f"---\n")
+        
+        return redirect(build_stream_url_with_params(request, message_id=int(msg_id)))
 
     # Действие: решить обращение по сообщению
     if request.method == 'POST' and request.POST.get('action') == 'resolve_ticket':
@@ -2040,7 +2288,7 @@ def stream(request):
         resolved_status = TicketStatus.objects.filter(name='Решено').first() or TicketStatus.objects.filter(is_final=True).first()
         if not resolved_status:
             messages.error(request, 'Статус "Решено" не найден')
-            return redirect('tickets:stream')
+            return redirect(build_stream_url_with_params(request))
 
         ticket.status = resolved_status
         ticket.resolution = (msg.text or '')
@@ -2074,7 +2322,7 @@ def stream(request):
         msg.save(update_fields=['linked_ticket', 'linked_action', 'processed_at'])
 
         messages.success(request, mark_safe(f'Обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a> переведено в Решено'))
-        return redirect('tickets:stream')
+        return redirect(build_stream_url_with_params(request, message_id=int(msg_id)))
 
     # Действие: добавить комментарий в обращение по сообщению
     if request.method == 'POST' and request.POST.get('action') == 'add_comment':
@@ -2086,11 +2334,11 @@ def stream(request):
         
         if not ticket_id or not ticket_id.isdigit():
             messages.error(request, 'Укажите корректный ID тикета')
-            return redirect('tickets:stream')
+            return redirect(build_stream_url_with_params(request))
         
         if not comment_text:
             messages.error(request, 'Введите текст комментария')
-            return redirect('tickets:stream')
+            return redirect(build_stream_url_with_params(request))
             
         msg = get_object_or_404(TelegramMessage, id=msg_id)
         ticket = get_object_or_404(Ticket, id=int(ticket_id))
@@ -2200,7 +2448,7 @@ def stream(request):
             comment=f'Комментарий добавлен: {comment.content[:50]}...'
         )
 
-        return redirect('tickets:stream')
+        return redirect(build_stream_url_with_params(request, message_id=int(msg_id)))
 
     # Массовый комментарий по выбранным сообщениям
     if request.method == 'POST' and request.POST.get('action') == 'bulk_comment':
@@ -2208,7 +2456,7 @@ def stream(request):
         ids = request.POST.getlist('selected')
         if not ticket_id or not ticket_id.isdigit():
             messages.error(request, 'Укажите корректный ID тикета для массового комментария')
-            return redirect('tickets:stream')
+            return redirect(build_stream_url_with_params(request))
         ticket = get_object_or_404(Ticket, id=int(ticket_id))
         msgs = TelegramMessage.objects.filter(id__in=ids).order_by('message_date')
         created = 0
@@ -2253,14 +2501,14 @@ def stream(request):
             
             created += 1
         messages.success(request, mark_safe(f'Добавлено комментариев: {created} в обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a>'))
-        return redirect('tickets:stream')
+        return redirect(build_stream_url_with_params(request))
 
     # Массовое удаление выбранных сообщений
     if request.method == 'POST' and request.POST.get('action') == 'bulk_delete':
         ids = request.POST.getlist('selected')
         deleted, _ = TelegramMessage.objects.filter(id__in=ids).delete()
         messages.success(request, f'Удалено записей: {deleted}')
-        return redirect('tickets:stream')
+        return redirect(build_stream_url_with_params(request))
 
     # Очистка за период
     if request.method == 'POST' and request.POST.get('action') == 'cleanup_period':
@@ -2270,7 +2518,7 @@ def stream(request):
         
         if not date_from or not date_to:
             messages.error(request, 'Укажите период для очистки')
-            return redirect('tickets:stream')
+            return redirect(build_stream_url_with_params(request))
         
         # Базовый фильтр по датам
         qs_to_delete = TelegramMessage.objects.filter(
@@ -2284,7 +2532,7 @@ def stream(request):
         
         cnt, _ = qs_to_delete.delete()
         messages.success(request, f'Удалено записей из потока: {cnt}')
-        return redirect('tickets:stream')
+        return redirect(build_stream_url_with_params(request))
 
     # Пагинация с поддержкой per_page
     per_page = request.GET.get('per_page', '25')
@@ -2295,9 +2543,7 @@ def stream(request):
     except (ValueError, TypeError):
         per_page = 25
     
-    paginator = Paginator(qs, per_page)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
+    page_obj = get_stream_page_with_filters(request, qs, per_page)
 
     # Маппинг для отображения на странице (только текущая страница)
     from_ids = {m.from_user_id for m in page_obj.object_list if m.from_user_id}
@@ -2365,6 +2611,8 @@ def stream(request):
             'group_name': group_name,
             'q': q or '',
             'per_page': per_page,
+            'date_from': date_from or '',
+            'date_to': date_to or '',
         },
         'clients_map': clients_map,
         'uta_map': uta_map,
@@ -2384,27 +2632,27 @@ def stream(request):
         
         if not ticket_id or not ticket_id.isdigit():
             messages.error(request, 'Укажите корректный ID обращения')
-            return redirect('tickets:stream')
+            return redirect(build_stream_url_with_params(request))
         
         try:
             ticket = Ticket.objects.get(id=int(ticket_id))
             msg = get_object_or_404(TelegramMessage, id=msg_id)
         except Ticket.DoesNotExist:
             messages.error(request, 'Обращение не найдено')
-            return redirect('tickets:stream')
+            return redirect(build_stream_url_with_params(request))
         
         # Проверяем, что статус можно изменить на "В работе"
         working_statuses = ['Новое', 'Ожидает ответа', 'Решено']
         if ticket.status.name not in working_statuses:
             messages.error(request, f'Нельзя перевести в работу обращение со статусом "{ticket.status.name}"')
-            return redirect('tickets:stream')
+            return redirect(build_stream_url_with_params(request))
         
         # Получаем статус "В работе"
         try:
             working_status = TicketStatus.objects.get(name='В работе')
         except TicketStatus.DoesNotExist:
             messages.error(request, 'Статус "В работе" не найден в системе')
-            return redirect('tickets:stream')
+            return redirect(build_stream_url_with_params(request))
         
         # Меняем статус
         old_status = ticket.status
@@ -2518,7 +2766,7 @@ def stream(request):
         )
         
         messages.success(request, mark_safe(f'Обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a> переведено в работу'))
-        return redirect('tickets:stream')
+        return redirect(build_stream_url_with_params(request, message_id=int(msg_id)))
 
     # Действие: перевести обращение в ожидание
     if request.method == 'POST' and request.POST.get('action') == 'set_waiting':
@@ -2529,27 +2777,27 @@ def stream(request):
         
         if not ticket_id or not ticket_id.isdigit():
             messages.error(request, 'Укажите корректный ID обращения')
-            return redirect('tickets:stream')
+            return redirect(build_stream_url_with_params(request))
         
         try:
             ticket = Ticket.objects.get(id=int(ticket_id))
             msg = get_object_or_404(TelegramMessage, id=msg_id)
         except Ticket.DoesNotExist:
             messages.error(request, 'Обращение не найдено')
-            return redirect('tickets:stream')
+            return redirect(build_stream_url_with_params(request))
         
         # Проверяем, что статус можно изменить на "Ожидает ответа"
         waiting_statuses = ['В работе', 'Новое']
         if ticket.status.name not in waiting_statuses:
             messages.error(request, f'Нельзя перевести в ожидание обращение со статусом "{ticket.status.name}"')
-            return redirect('tickets:stream')
+            return redirect(build_stream_url_with_params(request))
         
         # Получаем статус "Ожидает ответа"
         try:
             waiting_status = TicketStatus.objects.get(name='Ожидает ответа')
         except TicketStatus.DoesNotExist:
             messages.error(request, 'Статус "Ожидает ответа" не найден в системе')
-            return redirect('tickets:stream')
+            return redirect(build_stream_url_with_params(request))
         
         # Меняем статус
         old_status = ticket.status
@@ -2662,7 +2910,7 @@ def stream(request):
         )
         
         messages.success(request, mark_safe(f'Обращение <a href="{reverse("tickets:ticket_detail", args=[ticket.id])}" target="_blank">#{ticket.id}</a> переведено в ожидание'))
-        return redirect('tickets:stream')
+        return redirect(build_stream_url_with_params(request, message_id=int(msg_id)))
 
     return render(request, 'tickets/stream.html', context)
 

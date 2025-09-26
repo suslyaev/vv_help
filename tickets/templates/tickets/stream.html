@@ -7,6 +7,17 @@
 
 {% block content %}
 <div class="container my-4">
+  <!-- Временная отладочная информация -->
+  <div class="alert alert-info" style="font-size: 12px;">
+    <strong>Отладка:</strong><br>
+    Текущие фильтры: {{ filters|default:"нет" }}<br>
+    Текущая страница: {{ page_obj.number|default:"1" }} из {{ page_obj.paginator.num_pages|default:"1" }}<br>
+    Записей на странице: {{ page_obj.paginator.per_page|default:"25" }}<br>
+    Всего записей: {{ page_obj.paginator.count|default:"0" }}<br>
+    URL параметры: {{ request.GET.urlencode|default:"нет" }}<br>
+    <strong>POST параметры:</strong> {{ request.POST|default:"нет" }}<br>
+    <strong>Метод запроса:</strong> {{ request.method|default:"GET" }}
+  </div>
   <div class="d-flex justify-content-between align-items-center mb-3">
     <form class="d-flex" method="get">
       <input type="text" class="form-control me-2" name="q" value="{{ filters.q }}" placeholder="Поиск по тексту или пользователю">
@@ -14,6 +25,8 @@
              data-autocomplete-url="/tickets/api/groups/" data-autocomplete-min-length="0"
              placeholder="Начните вводить группу..." value="{{ filters.group_name }}">
       <input type="hidden" name="group_id" id="group_id" value="{{ filters.group_id }}">
+      <input type="date" class="form-control me-2" name="date_from" value="{{ filters.date_from }}" placeholder="Дата от">
+      <input type="date" class="form-control me-2" name="date_to" value="{{ filters.date_to }}" placeholder="Дата до">
       <button class="btn btn-primary" type="submit">Искать</button>
     </form>
   </div>
@@ -56,13 +69,13 @@
         <nav>
           <ul class="pagination pagination-sm mb-0">
             {% if page_obj.has_previous %}
-              <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&q={{ filters.q }}&group_id={{ filters.group_id }}&per_page={{ page_obj.paginator.per_page }}">‹</a></li>
+              <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&q={{ filters.q }}&group_id={{ filters.group_id }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}&per_page={{ page_obj.paginator.per_page }}">‹</a></li>
             {% else %}
               <li class="page-item disabled"><span class="page-link">‹</span></li>
             {% endif %}
             <li class="page-item disabled"><span class="page-link">{{ page_obj.number }}/{{ page_obj.paginator.num_pages }}</span></li>
             {% if page_obj.has_next %}
-              <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&q={{ filters.q }}&group_id={{ filters.group_id }}&per_page={{ page_obj.paginator.per_page }}">›</a></li>
+              <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&q={{ filters.q }}&group_id={{ filters.group_id }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}&per_page={{ page_obj.paginator.per_page }}">›</a></li>
             {% else %}
               <li class="page-item disabled"><span class="page-link">›</span></li>
             {% endif %}
@@ -74,7 +87,7 @@
 
     <div class="list-group">
       {% for m in page_obj %}
-        <div class="list-group-item py-2">
+        <div class="list-group-item py-2" id="message-{{ m.id }}">
           <div class="d-flex justify-content-between align-items-start">
             <div class="me-3" style="flex:1;">
               <div class="small text-muted mb-1">
@@ -158,7 +171,8 @@
                           data-chat-title="{{ m.chat_title|escapejs }}"
                           data-from-username="{{ m.from_username|escapejs }}"
                           data-from-fullname="{{ m.from_fullname|escapejs }}"
-                          data-from-user-id="{{ m.from_user_id|escapejs }}">Новое обращение</button>
+                          data-from-user-id="{{ m.from_user_id|escapejs }}"
+                          onclick="console.log('Button clicked for message_id:', {{ m.id }});">Новое обращение</button>
                   <button type="button" class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#setWorkingModal" data-message-id="{{ m.id }}">В работу</button>
                   <button type="button" class="btn btn-outline-info btn-sm" data-bs-toggle="modal" data-bs-target="#setWaitingModal" data-message-id="{{ m.id }}">В ожидание</button>
                   <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#resolveModal" data-message-id="{{ m.id }}">Решение</button>
@@ -181,6 +195,13 @@
           {% csrf_token %}
           <input type="hidden" name="action" value="add_comment">
           <input type="hidden" name="message_id" id="commentMessageId">
+          <!-- Сохраняем параметры фильтрации -->
+          <input type="hidden" name="preserve_q" value="{{ filters.q }}">
+          <input type="hidden" name="preserve_group_id" value="{{ filters.group_id }}">
+          <input type="hidden" name="preserve_date_from" value="{{ filters.date_from }}">
+          <input type="hidden" name="preserve_date_to" value="{{ filters.date_to }}">
+          <input type="hidden" name="preserve_per_page" value="{{ filters.per_page }}">
+          <input type="hidden" name="preserve_page" value="{{ page_obj.number }}">
           <div class="modal-header">
             <h5 class="modal-title">Добавить комментарий</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -228,6 +249,13 @@
           {% csrf_token %}
           <input type="hidden" name="action" value="resolve_ticket">
           <input type="hidden" name="message_id" id="resolveMessageId">
+          <!-- Сохраняем параметры фильтрации -->
+          <input type="hidden" name="preserve_q" value="{{ filters.q }}">
+          <input type="hidden" name="preserve_group_id" value="{{ filters.group_id }}">
+          <input type="hidden" name="preserve_date_from" value="{{ filters.date_from }}">
+          <input type="hidden" name="preserve_date_to" value="{{ filters.date_to }}">
+          <input type="hidden" name="preserve_per_page" value="{{ filters.per_page }}">
+          <input type="hidden" name="preserve_page" value="{{ page_obj.number }}">
           <div class="modal-header">
             <h5 class="modal-title">Решить обращение</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -291,10 +319,17 @@
   <div class="modal fade" id="createTicketModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
       <div class="modal-content">
-        <form method="post" action="{% url 'tickets:stream' %}">
+        <form method="post" action="{% url 'tickets:stream' %}" onsubmit="console.log('Form submitted with message_id:', document.getElementById('createTicketMessageId').value); return true;">
           {% csrf_token %}
           <input type="hidden" name="action" value="create_ticket">
           <input type="hidden" name="message_id" id="createTicketMessageId">
+          <!-- Сохраняем параметры фильтрации -->
+          <input type="hidden" name="preserve_q" value="{{ filters.q }}">
+          <input type="hidden" name="preserve_group_id" value="{{ filters.group_id }}">
+          <input type="hidden" name="preserve_date_from" value="{{ filters.date_from }}">
+          <input type="hidden" name="preserve_date_to" value="{{ filters.date_to }}">
+          <input type="hidden" name="preserve_per_page" value="{{ filters.per_page }}">
+          <input type="hidden" name="preserve_page" value="{{ page_obj.number }}">
           <div class="modal-header">
             <h5 class="modal-title">Создать обращение</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -364,6 +399,13 @@
           {% csrf_token %}
           <input type="hidden" name="action" value="set_working">
           <input type="hidden" name="message_id" id="setWorkingMessageId">
+          <!-- Сохраняем параметры фильтрации -->
+          <input type="hidden" name="preserve_q" value="{{ filters.q }}">
+          <input type="hidden" name="preserve_group_id" value="{{ filters.group_id }}">
+          <input type="hidden" name="preserve_date_from" value="{{ filters.date_from }}">
+          <input type="hidden" name="preserve_date_to" value="{{ filters.date_to }}">
+          <input type="hidden" name="preserve_per_page" value="{{ filters.per_page }}">
+          <input type="hidden" name="preserve_page" value="{{ page_obj.number }}">
           
           <div class="modal-header">
             <h5 class="modal-title">Перевести обращение в работу</h5>
@@ -417,6 +459,13 @@
           {% csrf_token %}
           <input type="hidden" name="action" value="set_waiting">
           <input type="hidden" name="message_id" id="setWaitingMessageId">
+          <!-- Сохраняем параметры фильтрации -->
+          <input type="hidden" name="preserve_q" value="{{ filters.q }}">
+          <input type="hidden" name="preserve_group_id" value="{{ filters.group_id }}">
+          <input type="hidden" name="preserve_date_from" value="{{ filters.date_from }}">
+          <input type="hidden" name="preserve_date_to" value="{{ filters.date_to }}">
+          <input type="hidden" name="preserve_per_page" value="{{ filters.per_page }}">
+          <input type="hidden" name="preserve_page" value="{{ page_obj.number }}">
           
           <div class="modal-header">
             <h5 class="modal-title">Перевести обращение в ожидание</h5>
@@ -470,6 +519,24 @@
 {{ clients_map_json|json_script:"clients-map-data" }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+  // Плавная прокрутка к якорю, если он есть в URL
+  if (window.location.hash) {
+    setTimeout(function() {
+      var targetElement = document.querySelector(window.location.hash);
+      if (targetElement) {
+        targetElement.scrollIntoView({ 
+          behavior: 'smooth',
+          block: 'center'
+        });
+        // Добавляем подсветку к элементу
+        targetElement.style.backgroundColor = '#fff3cd';
+        setTimeout(function() {
+          targetElement.style.backgroundColor = '';
+        }, 2000);
+      }
+    }, 500); // Небольшая задержка для загрузки контента
+  }
+  
   // Данные активных маршрутов для предзаполнения
   var activeRoutes = JSON.parse(document.getElementById('active-routes-data').textContent);
   
@@ -554,6 +621,8 @@ document.addEventListener('DOMContentLoaded', function() {
     createTicketModal.addEventListener('show.bs.modal', function (event) {
       var button = event.relatedTarget;
       var messageId = button.getAttribute('data-message-id');
+      console.log('Create ticket modal opened with messageId:', messageId);
+      
       var messageText = button.getAttribute('data-message-text');
       var chatTitle = button.getAttribute('data-chat-title') || '';
       var fromUsername = button.getAttribute('data-from-username') || '';
@@ -980,9 +1049,22 @@ function initTicketAutocomplete(inputId, hiddenId, dropdownId, apiUrl) {
 
 // Функция для изменения количества элементов на странице
 function changePageSize(perPage) {
+  console.log('changePageSize called with perPage:', perPage);
+  console.log('Current URL:', window.location.href);
+  
   const url = new URL(window.location);
   url.searchParams.set('per_page', perPage);
-  url.searchParams.set('page', '1'); // Сбрасываем на первую страницу
+  // Не устанавливаем page=1, чтобы Django мог автоматически выбрать корректную страницу
+  // Сохраняем все параметры фильтрации
+  const currentParams = new URLSearchParams(window.location.search);
+  ['q', 'group_id', 'date_from', 'date_to'].forEach(param => {
+    if (currentParams.has(param)) {
+      url.searchParams.set(param, currentParams.get(param));
+      console.log(`Preserving param ${param}:`, currentParams.get(param));
+    }
+  });
+  
+  console.log('Final URL:', url.toString());
   window.location.href = url.toString();
 }
 </script>
