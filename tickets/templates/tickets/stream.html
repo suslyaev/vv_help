@@ -343,24 +343,34 @@
               <div class="col-md-6">
                 <div class="mb-3">
                   <label class="form-label">Клиент:</label>
-                  <div class="autocomplete-container">
-                    <input type="text" class="form-control autocomplete-field" name="client" 
-                           data-autocomplete-url="/tickets/api/clients/" data-autocomplete-min-length="1"
-                           placeholder="Начните вводить клиента..." id="createTicketClient">
-                    <input type="hidden" name="client_id" id="createTicketClientId">
-                    <div class="autocomplete-dropdown" id="createTicketClientDropdown"></div>
+                  <div class="d-flex">
+                    <div class="autocomplete-container flex-grow-1">
+                      <input type="text" class="form-control autocomplete-field" name="client" 
+                             data-autocomplete-url="/tickets/api/clients/" data-autocomplete-min-length="1"
+                             placeholder="Начните вводить клиента..." id="createTicketClient">
+                      <input type="hidden" name="client_id" id="createTicketClientId">
+                      <div class="autocomplete-dropdown" id="createTicketClientDropdown"></div>
+                    </div>
+                    <button type="button" class="btn btn-outline-success ms-2" id="createNewClientBtn" title="Создать нового клиента">
+                      <i class="bi bi-plus"></i>
+                    </button>
                   </div>
                 </div>
               </div>
               <div class="col-md-6">
                 <div class="mb-3">
                   <label class="form-label">Организация:</label>
-                  <div class="autocomplete-container">
-                    <input type="text" class="form-control autocomplete-field" name="organization" 
-                           data-autocomplete-url="/tickets/api/organizations/" data-autocomplete-min-length="1"
-                           placeholder="Начните вводить организацию..." id="createTicketOrganization">
-                    <input type="hidden" name="organization_id" id="createTicketOrganizationId">
-                    <div class="autocomplete-dropdown" id="createTicketOrganizationDropdown"></div>
+                  <div class="d-flex">
+                    <div class="autocomplete-container flex-grow-1">
+                      <input type="text" class="form-control autocomplete-field" name="organization" 
+                             data-autocomplete-url="/tickets/api/organizations/" data-autocomplete-min-length="1"
+                             placeholder="Начните вводить организацию..." id="createTicketOrganization">
+                      <input type="hidden" name="organization_id" id="createTicketOrganizationId">
+                      <div class="autocomplete-dropdown" id="createTicketOrganizationDropdown"></div>
+                    </div>
+                    <button type="button" class="btn btn-outline-success ms-2" id="createNewOrganizationBtn" title="Создать новую организацию">
+                      <i class="bi bi-plus"></i>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -507,6 +517,74 @@
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальное окно создания клиента -->
+  <div class="modal fade" id="createClientModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Создать нового клиента</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Контактное лицо:</label>
+            <input type="text" class="form-control" id="newClientContact" placeholder="Введите контактное лицо">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Имя клиента:</label>
+            <input type="text" class="form-control" id="newClientName" placeholder="Введите имя клиента">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Внешний ID:</label>
+            <input type="text" class="form-control" id="newClientExternalId" placeholder="Внешний ID" readonly>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Телефон:</label>
+            <input type="text" class="form-control" id="newClientPhone" placeholder="Введите телефон">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Email:</label>
+            <input type="email" class="form-control" id="newClientEmail" placeholder="Введите email">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Заметки:</label>
+            <textarea class="form-control" id="newClientNotes" rows="2" placeholder="Дополнительная информация о клиенте"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+          <button type="button" class="btn btn-success" id="saveNewClientBtn">Создать клиента</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальное окно создания организации -->
+  <div class="modal fade" id="createOrganizationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Создать новую организацию</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Название организации:</label>
+            <input type="text" class="form-control" id="newOrganizationName" placeholder="Введите название организации">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Описание:</label>
+            <textarea class="form-control" id="newOrganizationDescription" rows="3" placeholder="Введите описание организации"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+          <button type="button" class="btn btn-success" id="saveNewOrganizationBtn">Создать организацию</button>
+        </div>
       </div>
     </div>
   </div>
@@ -772,6 +850,11 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('No client to prefill');
       }
       
+      // Добавляем атрибуты данных для создания клиента
+      document.getElementById('createTicketClient').setAttribute('data-from-username', fromUsername || '');
+      document.getElementById('createTicketClient').setAttribute('data-from-fullname', fromFullname || '');
+      document.getElementById('createTicketClient').setAttribute('data-from-user-id', fromUserId || '');
+      
       // Организация не выбрана по умолчанию
       document.getElementById('createTicketOrganization').value = '';
       document.getElementById('createTicketOrganizationId').value = '';
@@ -797,6 +880,142 @@ document.addEventListener('DOMContentLoaded', function() {
       console.log('Modal opened, fields should be prefilled');
     });
   }
+  
+  // Обработчики для создания клиентов и организаций
+  document.getElementById('createNewClientBtn').addEventListener('click', function() {
+    // Получаем данные из Telegram сообщения
+    var fromUsername = document.getElementById('createTicketClient').getAttribute('data-from-username') || '';
+    var fromFullname = document.getElementById('createTicketClient').getAttribute('data-from-fullname') || '';
+    var fromUserId = document.getElementById('createTicketClient').getAttribute('data-from-user-id') || '';
+    
+    // Предзаполняем поля клиента
+    var contactPerson = fromFullname || fromUsername || fromUserId || '';
+    var clientName = fromFullname || fromUsername || fromUserId || '';
+    var username = fromUsername || '';
+    
+    document.getElementById('newClientContact').value = contactPerson;
+    document.getElementById('newClientName').value = clientName;
+    document.getElementById('newClientExternalId').value = fromUserId || '';
+    document.getElementById('newClientNotes').value = username ? `Username: @${username}` : '';
+    
+    // Показываем модальное окно
+    var modal = new bootstrap.Modal(document.getElementById('createClientModal'));
+    modal.show();
+  });
+  
+  document.getElementById('createNewOrganizationBtn').addEventListener('click', function() {
+    // Показываем модальное окно
+    var modal = new bootstrap.Modal(document.getElementById('createOrganizationModal'));
+    modal.show();
+  });
+  
+  // Обработчик сохранения нового клиента
+  document.getElementById('saveNewClientBtn').addEventListener('click', function() {
+    var name = document.getElementById('newClientName').value.trim();
+    var externalId = document.getElementById('newClientExternalId').value.trim();
+    var contact = document.getElementById('newClientContact').value.trim();
+    var phone = document.getElementById('newClientPhone').value.trim();
+    var email = document.getElementById('newClientEmail').value.trim();
+    var notes = document.getElementById('newClientNotes').value.trim();
+    
+    if (!name) {
+      alert('Введите имя клиента');
+      return;
+    }
+    
+    // Отправляем AJAX запрос для создания клиента
+    fetch('/tickets/api/clients/create/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+      },
+      body: JSON.stringify({
+        name: name,
+        external_id: externalId,
+        contact_person: contact,
+        phone: phone,
+        email: email,
+        notes: notes
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        // Заполняем поля в основной форме
+        document.getElementById('createTicketClient').value = data.client.name;
+        document.getElementById('createTicketClientId').value = data.client.id;
+        
+        // Закрываем модальное окно
+        var modal = bootstrap.Modal.getInstance(document.getElementById('createClientModal'));
+        modal.hide();
+        
+        // Очищаем поля
+        document.getElementById('newClientName').value = '';
+        document.getElementById('newClientExternalId').value = '';
+        document.getElementById('newClientContact').value = '';
+        document.getElementById('newClientPhone').value = '';
+        document.getElementById('newClientEmail').value = '';
+        document.getElementById('newClientNotes').value = '';
+        
+        console.log('Client created successfully:', data.client);
+      } else {
+        alert('Ошибка при создании клиента: ' + (data.error || 'Неизвестная ошибка'));
+      }
+    })
+    .catch(error => {
+      console.error('Error creating client:', error);
+      alert('Ошибка при создании клиента');
+    });
+  });
+  
+  // Обработчик сохранения новой организации
+  document.getElementById('saveNewOrganizationBtn').addEventListener('click', function() {
+    var name = document.getElementById('newOrganizationName').value.trim();
+    var description = document.getElementById('newOrganizationDescription').value.trim();
+    
+    if (!name) {
+      alert('Введите название организации');
+      return;
+    }
+    
+    // Отправляем AJAX запрос для создания организации
+    fetch('/tickets/api/organizations/create-new/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+      },
+      body: JSON.stringify({
+        name: name,
+        description: description
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        // Заполняем поля в основной форме
+        document.getElementById('createTicketOrganization').value = data.organization.name;
+        document.getElementById('createTicketOrganizationId').value = data.organization.id;
+        
+        // Закрываем модальное окно
+        var modal = bootstrap.Modal.getInstance(document.getElementById('createOrganizationModal'));
+        modal.hide();
+        
+        // Очищаем поля
+        document.getElementById('newOrganizationName').value = '';
+        document.getElementById('newOrganizationDescription').value = '';
+        
+        console.log('Organization created successfully:', data.organization);
+      } else {
+        alert('Ошибка при создании организации: ' + (data.error || 'Неизвестная ошибка'));
+      }
+    })
+    .catch(error => {
+      console.error('Error creating organization:', error);
+      alert('Ошибка при создании организации');
+    });
+  });
   
   var bulkForm = document.getElementById('bulkCommentForm');
   if (bulkForm) {

@@ -11,6 +11,9 @@ from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.utils.http import urlencode
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+import json
 from .models import Ticket, Category, Client, Organization, TicketStatus, TicketComment, TicketTemplate, TicketAudit, TicketAttachment, TelegramMessage, TelegramRoute, TelegramGroup
 from .forms import TicketForm, TicketCommentForm, ClientForm, TicketAttachmentForm, OrganizationForm
 
@@ -2035,6 +2038,104 @@ def analytics(request):
     }
 
     return render(request, 'tickets/analytics.html', context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def api_create_client(request):
+    """API для создания нового клиента"""
+    try:
+        data = json.loads(request.body)
+        
+        name = data.get('name', '').strip()
+        external_id = data.get('external_id', '').strip()
+        contact_person = data.get('contact_person', '').strip()
+        phone = data.get('phone', '').strip()
+        email = data.get('email', '').strip()
+        notes = data.get('notes', '').strip()
+        
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Имя клиента обязательно'})
+        
+        # Проверяем, не существует ли уже клиент с таким именем
+        existing_client = Client.objects.filter(name__iexact=name).first()
+        if existing_client:
+            return JsonResponse({
+                'success': True, 
+                'client': {
+                    'id': existing_client.id,
+                    'name': existing_client.name
+                },
+                'message': 'Клиент с таким именем уже существует'
+            })
+        
+        # Создаем нового клиента
+        client = Client.objects.create(
+            name=name,
+            external_id=external_id,
+            contact_person=contact_person,
+            phone=phone,
+            email=email,
+            notes=notes
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'client': {
+                'id': client.id,
+                'name': client.name
+            }
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Неверный формат JSON'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+@require_http_methods(["POST"])
+def api_create_organization(request):
+    """API для создания новой организации"""
+    try:
+        data = json.loads(request.body)
+        
+        name = data.get('name', '').strip()
+        comment = data.get('description', '').strip()
+        
+        if not name:
+            return JsonResponse({'success': False, 'error': 'Название организации обязательно'})
+        
+        # Проверяем, не существует ли уже организация с таким названием
+        existing_org = Organization.objects.filter(name__iexact=name).first()
+        if existing_org:
+            return JsonResponse({
+                'success': True, 
+                'organization': {
+                    'id': existing_org.id,
+                    'name': existing_org.name
+                },
+                'message': 'Организация с таким названием уже существует'
+            })
+        
+        # Создаем новую организацию
+        organization = Organization.objects.create(
+            name=name,
+            comment=comment
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'organization': {
+                'id': organization.id,
+                'name': organization.name
+            }
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Неверный формат JSON'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
 
 
 @login_required
