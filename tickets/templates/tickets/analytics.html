@@ -1,5 +1,6 @@
 {% extends 'tickets/base.html' %}
 {% load static %}
+{% load ticket_filters %}
 
 {% block title %}Аналитика - Система поддержки ВкусВилл{% endblock %}
 {% block page_title %}Аналитика{% endblock %}
@@ -119,7 +120,7 @@
                         <td>
                             {% if ticket.tags %}
                                 {% for tag in ticket.tags|split:"," %}
-                                    <span class="badge bg-secondary me-1">{{ tag|strip }}</span>
+                                    <span class="badge bg-secondary me-1">{{ tag }}</span>
                                 {% endfor %}
                             {% else %}
                                 —
