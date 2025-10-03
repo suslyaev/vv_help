@@ -56,3 +56,10 @@ def format_timedelta(value):
             return f"{days} дн {hours} ч"
         else:
             return f"{days} дн"
+
+@register.filter
+def dict_get(value, key):
+    """Получает значение из словаря по ключу"""
+    if not isinstance(value, dict):
+        return None
+    return value.get(key)
