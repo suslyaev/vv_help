@@ -2178,7 +2178,7 @@ def analytics_export_xlsx(request):
     wb = Workbook()
     ws = wb.active
     ws.title = 'Обращения'
-    headers = ['ID', 'Заголовок', 'Клиент', 'Контактное лицо', 'Организация', 'Категория', 'Статус', 'Исполнитель', 'Создано', 'Дата выполнения']
+    headers = ['ID', 'Заголовок', 'Клиент', 'Контактное лицо', 'Организация', 'Категория', 'Статус', 'Исполнитель', 'Создано', 'Дата выполнения', 'Теги']
     ws.append(headers)
     for t in qs.order_by('-created_at'):
         ws.append([
@@ -2192,6 +2192,7 @@ def analytics_export_xlsx(request):
             (t.assigned_to.get_full_name() or t.assigned_to.username) if t.assigned_to else '',
             t.created_at.strftime('%d.%m.%Y %H:%M'),
             t.resolved_at.strftime('%d.%m.%Y %H:%M') if t.resolved_at else '',
+            t.tags if t.tags else '',
         ])
 
     # Автоширина

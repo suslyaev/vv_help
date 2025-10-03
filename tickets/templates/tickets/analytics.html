@@ -102,6 +102,7 @@
                         <th>Статус</th>
                         <th>Исполнитель</th>
                         <th>Создано</th>
+                        <th>Теги</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -115,6 +116,15 @@
                         <td>{{ ticket.status.name }}</td>
                         <td>{% if ticket.assigned_to %}{{ ticket.assigned_to.get_full_name|default:ticket.assigned_to.username }}{% else %}—{% endif %}</td>
                         <td>{{ ticket.created_at|date:"d.m.Y" }}</td>
+                        <td>
+                            {% if ticket.tags %}
+                                {% for tag in ticket.tags|split:"," %}
+                                    <span class="badge bg-secondary me-1">{{ tag|strip }}</span>
+                                {% endfor %}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
